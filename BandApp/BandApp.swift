@@ -4,6 +4,7 @@ import SwiftUI
 struct BandAppMain: App {
     @StateObject private var ble = BLEManager()
     @StateObject private var store = Store()
+    @StateObject private var vibes = VibeCenter()
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -11,9 +12,11 @@ struct BandAppMain: App {
             RootView()
                 .environmentObject(ble)
                 .environmentObject(store)
+                .environmentObject(vibes)
                 .preferredColorScheme(.dark)
                 .tint(Theme.green)
                 .onAppear {
+                    vibes.attach(ble)
                     ble.onHeartRate = { [weak store] bpm in store?.addHR(bpm) }
                     ble.onHRResult = { [weak store] bpm in
                         store?.addHRCheck(HRCheck(date: Date(), bpm: bpm, low: bpm, high: bpm))

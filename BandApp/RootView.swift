@@ -142,6 +142,7 @@ struct TabBar: View {
 }
 
 struct RootView: View {
+    @EnvironmentObject var vibes: VibeCenter
     @State private var tab: AppTab = .home
     @State private var showSplash = true
 
@@ -163,6 +164,13 @@ struct RootView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             TabBar(tab: $tab)
         }
+        .overlay {
+            if let a = vibes.alert {
+                BuzzAlert(text: a)
+                    .transition(.opacity.combined(with: .scale(scale: 1.05)))
+            }
+        }
+        .animation(Theme.spring, value: vibes.alert)
         .overlay {
             if showSplash {
                 SplashView { withAnimation(.easeOut(duration: 0.3)) { showSplash = false } }
