@@ -36,6 +36,7 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var heartRate: Int?
     @Published var battery: Int?
     @Published var hrHistory: [Int] = []
+    var onHeartRate: ((Int) -> Void)?
 
     private var central: CBCentralManager!
     private let savedKey = "savedBandID"
@@ -75,8 +76,16 @@ final class BLEManager: NSObject, ObservableObject {
         addLog("Connecting to \(d.name)...")
     }
 
+    private var userDisconnected = false
+
     func disconnect() {
+        userDisconnected = true
         if let p = connected { central.cancelPeripheralConnection(p) }
+    }
+
+    func forgetBand() {
+        disconnect()
+        UserDefaults.standard.removeObject(forKey: savedKey)
     }
 
     func reconnectSaved() {
@@ -171,6 +180,11 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
     func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
         addLog("Disconnected")
         connected = nil
+        if !userDisconnected {
+            addLog("Will reconnect when the band is near")
+            central.connect(p, options: nil)
+        }
+        userDisconnected = false
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
@@ -201,6 +215,7 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
             let bpm = (flags & 0x01) == 0 ? Int(d[1]) : (d.count >= 3 ? Int(d[1]) | (Int(d[2]) << 8) : Int(d[1]))
             if bpm > 0 {
                 heartRate = bpm
+                onHeartRate?(bpm)
                 hrHistory.append(bpm)
                 if hrHistory.count > 120 { hrHistory.removeFirst() }
             }

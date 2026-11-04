@@ -3,13 +3,22 @@ import SwiftUI
 @main
 struct BandAppMain: App {
     @StateObject private var ble = BLEManager()
+    @StateObject private var store = Store()
+    @Environment(\.scenePhase) private var phase
+
     var body: some Scene {
         WindowGroup {
             TabView {
                 HomeView().tabItem { Label("Home", systemImage: "house") }
+                HealthView().tabItem { Label("Health", systemImage: "heart.text.square") }
+                WorkoutView().tabItem { Label("Start", systemImage: "plus.circle") }
                 DetectiveView().tabItem { Label("Detective", systemImage: "antenna.radiowaves.left.and.right") }
+                MoreView().tabItem { Label("More", systemImage: "line.3.horizontal") }
             }
             .environmentObject(ble)
+            .environmentObject(store)
+            .onAppear { ble.onHeartRate = { [weak store] bpm in store?.addHR(bpm) } }
+            .onChange(of: phase) { p in if p != .active { store.save() } }
             .preferredColorScheme(.dark)
             .tint(Theme.green)
         }
