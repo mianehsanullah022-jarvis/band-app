@@ -17,11 +17,29 @@ struct VibrationView: View {
             }
 
             Section {
+                Button {
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    player.stop()
+                    ble.stopVibrate()
+                } label: {
+                    HStack {
+                        Spacer()
+                        Label("Stop vibration", systemImage: "stop.fill").font(.system(size: 16, weight: .bold))
+                        Spacer()
+                    }
+                    .foregroundColor(.white)
+                    .padding(.vertical, 6)
+                }
+                .listRowBackground(Theme.red)
+            }
+
+            Section {
                 ForEach(0..<BLEManager.vibrateMethods.count, id: \.self) { i in
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         ble.vibrateMethod = i
-                        ble.sendVibrate(method: i)
+                        ble.stopVibrate()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { ble.buzzOnce(seconds: 1.0) }
                     } label: {
                         HStack(spacing: 12) {
                             IconBadge(symbol: "\(i + 1).circle.fill", color: ble.vibrateMethod == i ? Theme.green : Theme.muted)
@@ -40,7 +58,7 @@ struct VibrationView: View {
                     .disabled(!ble.isWPBand)
                 }
             } header: { Text("Step 1 · Find the buzz") } footer: {
-                Text("Tap each method. Keep the one that makes your band vibrate. All patterns below use it.")
+                Text("Tap each method: the band should buzz for 1 second and then stop. Keep the one that does that. All patterns use it.")
             }
 
             Section {

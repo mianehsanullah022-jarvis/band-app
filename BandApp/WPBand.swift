@@ -75,19 +75,39 @@ extension BLEManager {
         set { UserDefaults.standard.set(newValue, forKey: "vibrateMethod"); objectWillChange.send() }
     }
 
+    /// "Find my band": buzz for 3 seconds, then stop.
     func findBand() {
-        sendVibrate(method: vibrateMethod)
+        buzzOnce(seconds: 3)
     }
 
-    func sendVibrate(method: Int) {
+    func sendVibrate(method: Int, on: Bool = true) {
         let m = Self.vibrateMethods[min(max(method, 0), Self.vibrateMethods.count - 1)]
-        wpSend(group: m.0, flag: m.1, id: m.2, data: [0x01], log: "vibrate (method \(method + 1))")
+        wpSend(group: m.0, flag: m.1, id: m.2, data: [on ? 0x01 : 0x00],
+               log: "vibrate \(on ? "on" : "off") (method \(method + 1))")
+    }
+
+    /// One buzz of a set length: start, then stop.
+    func buzzOnce(seconds: Double = 0.6) {
+        let m = vibrateMethod
+        sendVibrate(method: m, on: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            self?.sendVibrate(method: m, on: false)
+        }
+    }
+
+    /// Sends "stop" for every vibrate method, so the band goes quiet whatever started it.
+    func stopVibrate() {
+        for i in 0..<Self.vibrateMethods.count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.15) { [weak self] in
+                self?.sendVibrate(method: i, on: false)
+            }
+        }
     }
 
     /// Buzzes the band several times in a row.
     func buzz(times: Int, gap: Double = 2.5) {
         for i in 0..<times {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * gap) { [weak self] in self?.findBand() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * gap) { [weak self] in self?.buzzOnce(seconds: 0.6) }
         }
     }
 
