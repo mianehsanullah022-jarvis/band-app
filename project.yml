@@ -1,0 +1,35 @@
+name: BandApp
+options:
+  bundleIdPrefix: com.ehsan
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  BandApp:
+    type: application
+    platform: iOS
+    sources:
+      - BandApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ehsan.bandapp
+        PRODUCT_NAME: Band
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Band
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Band uses Bluetooth to read data from your fitness band."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""
+    info:
+      path: BandApp/Info.plist
+      properties:
+        UIBackgroundModes: [bluetooth-central]
+        NSBluetoothAlwaysUsageDescription: "Band uses Bluetooth to read data from your fitness band."
+        CFBundleDisplayName: Band
+        UILaunchScreen: {}
