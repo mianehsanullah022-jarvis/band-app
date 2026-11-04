@@ -56,13 +56,32 @@ final class BLEManager: NSObject, ObservableObject {
         if log.count > 2000 { log.removeFirst(log.count - 2000) }
     }
 
+    /// Services that cheap bands commonly use. A band that is already connected
+    /// to the phone (through Podsfine) stays quiet, so we also ask iOS for
+    /// connected devices that offer any of these.
+    static let commonServices: [CBUUID] = [
+        "180D", "180F", "180A", "1800", "1801", "1810", "1814", "1816", "181C", "181D",
+        "FEE7", "FEE0", "FEE1", "FEA0", "FEEA", "FE59", "FFF0", "FFE0", "FFD0", "FFC0",
+        "FF00", "FE00", "FD00", "AE00", "AE30", "190E", "3802", "D0FF", "FEF5", "FEBA",
+        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E",
+        "0000FEE7-0000-1000-8000-00805F9B34FB",
+    ].map { CBUUID(string: $0) }
+
     func startScan() {
         guard bluetoothOn else { return }
         devices.removeAll()
         scanning = true
-        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
         addLog("Scanning...")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.stopScan() }
+
+        let already = central.retrieveConnectedPeripherals(withServices: Self.commonServices)
+        for p in already {
+            let name = p.name ?? "Connected device"
+            addLog("Already connected to phone: \(name)")
+            devices.append(FoundDevice(id: p.identifier, peripheral: p, name: "\(name) · connected", rssi: 0))
+        }
+
+        central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.stopScan() }
     }
 
     func stopScan() {
@@ -153,14 +172,20 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func centralManager(_ c: CBCentralManager, didDiscover p: CBPeripheral, advertisementData ad: [String: Any], rssi: NSNumber) {
-        let name = (ad[CBAdvertisementDataLocalNameKey] as? String) ?? p.name ?? ""
-        if name.isEmpty { return }
+        var name = (ad[CBAdvertisementDataLocalNameKey] as? String) ?? p.name ?? ""
+        let r = rssi.intValue
+        if r == 127 { return }
+        if name.isEmpty { name = "No name · " + String(p.identifier.uuidString.prefix(4)) }
         if let i = devices.firstIndex(where: { $0.id == p.identifier }) {
-            devices[i].rssi = rssi.intValue
+            devices[i].rssi = r
         } else {
-            devices.append(FoundDevice(id: p.identifier, peripheral: p, name: name, rssi: rssi.intValue))
-            devices.sort { $0.rssi > $1.rssi }
+            devices.append(FoundDevice(id: p.identifier, peripheral: p, name: name, rssi: r))
+            var extra = ""
+            if let m = ad[CBAdvertisementDataManufacturerDataKey] as? Data { extra += " mfr=\(hexString(m))" }
+            if let s = ad[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] { extra += " svc=\(s.map { $0.uuidString }.joined(separator: ","))" }
+            addLog("Found \(name) \(r) dBm\(extra)")
         }
+        devices.sort { ($0.rssi == 0 ? 1 : 0, $0.rssi) > ($1.rssi == 0 ? 1 : 0, $1.rssi) }
     }
 
     func centralManager(_ c: CBCentralManager, didConnect p: CBPeripheral) {

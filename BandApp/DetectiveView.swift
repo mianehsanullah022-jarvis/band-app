@@ -10,7 +10,7 @@ struct DetectiveView: View {
             List {
                 Section {
                     if ble.connected == nil {
-                        Button(ble.scanning ? "Scanning… (15 sec)" : "Find my band") { ble.startScan() }
+                        Button(ble.scanning ? "Scanning… (30 sec)" : "Find my band") { ble.startScan() }
                             .disabled(!ble.bluetoothOn || ble.scanning)
                         if !ble.bluetoothOn {
                             Text("Turn on Bluetooth and allow Band to use it in Settings.").font(.footnote).foregroundColor(Theme.muted)
@@ -22,7 +22,7 @@ struct DetectiveView: View {
                                 HStack {
                                     Text(d.name).foregroundColor(.white)
                                     Spacer()
-                                    Text("\(d.rssi) dBm").font(.footnote).foregroundColor(Theme.muted)
+                                    Text(d.rssi == 0 ? "" : "\(d.rssi)").font(.footnote).foregroundColor(Theme.muted)
                                 }
                             }
                         }
@@ -35,7 +35,7 @@ struct DetectiveView: View {
                         }
                     }
                 } header: { Text("1 · Connect") } footer: {
-                    Text("Tip: if your band does not show up, close Podsfine fully and try again.")
+                    Text("Hold the band right next to the phone. Your band is usually the one marked “connected”, or the one with the number closest to 0 (for example −40 is closer than −80).")
                 }
 
                 if !ble.chars.isEmpty {
