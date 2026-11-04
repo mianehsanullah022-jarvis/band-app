@@ -55,6 +55,7 @@ struct Profile: Codable {
     var male: Bool = true
     var waterGoalMl: Int = 2500
     var glassMl: Int = 250
+    var stepsGoal: Int = 8000
     var maxHR: Int { Int(208 - 0.7 * Double(age)) }
 
     init() {}
@@ -67,9 +68,10 @@ struct Profile: Codable {
         male = try c.decodeIfPresent(Bool.self, forKey: .male) ?? true
         waterGoalMl = try c.decodeIfPresent(Int.self, forKey: .waterGoalMl) ?? 2500
         glassMl = try c.decodeIfPresent(Int.self, forKey: .glassMl) ?? 250
+        stepsGoal = try c.decodeIfPresent(Int.self, forKey: .stepsGoal) ?? 8000
     }
 
-    enum CodingKeys: String, CodingKey { case name, age, weightKg, male, waterGoalMl, glassMl }
+    enum CodingKeys: String, CodingKey { case name, age, weightKg, male, waterGoalMl, glassMl, stepsGoal }
 }
 
 enum BPCategory {
@@ -112,6 +114,7 @@ final class Store: ObservableObject {
     @Published var bp: [BPReading] = []
     @Published var hrChecks: [HRCheck] = []
     @Published var water: [WaterDay] = []
+    @Published var stepDays: [WaterDay] = []     // same shape: day + number (steps)
 
     // Live workout
     @Published var activeType: String?
@@ -132,6 +135,7 @@ final class Store: ObservableObject {
         var bp: [BPReading]?
         var hrChecks: [HRCheck]?
         var water: [WaterDay]?
+        var stepDays: [WaterDay]?
     }
 
     init() { load() }
@@ -144,6 +148,7 @@ final class Store: ObservableObject {
         bp = s.bp ?? []
         hrChecks = s.hrChecks ?? []
         water = s.water ?? []
+        stepDays = s.stepDays ?? []
         profile = s.profile
         loading = false
         trim()
@@ -151,7 +156,7 @@ final class Store: ObservableObject {
 
     func save() {
         if loading { return }
-        let s = Saved(profile: profile, samples: samples, workouts: workouts, bp: bp, hrChecks: hrChecks, water: water)
+        let s = Saved(profile: profile, samples: samples, workouts: workouts, bp: bp, hrChecks: hrChecks, water: water, stepDays: stepDays)
         if let d = try? JSONEncoder().encode(s) { try? d.write(to: fileURL, options: .atomic) }
     }
 
@@ -166,6 +171,7 @@ final class Store: ObservableObject {
         bp = []
         hrChecks = []
         water = []
+        stepDays = []
         save()
     }
 
@@ -211,6 +217,37 @@ final class Store: ObservableObject {
             let d = cal.date(byAdding: .day, value: i - 6, to: Date()) ?? Date()
             let key = Self.dayKey(d)
             return WaterBar(index: i, label: f.string(from: d), ml: water.first { $0.day == key }?.ml ?? 0)
+        }
+    }
+
+    // MARK: Steps
+
+    private var lastStepsSave = Date.distantPast
+
+    /// The band reports today's total; keep the highest number seen for each day.
+    func setStepsToday(_ steps: Int) {
+        let key = Self.dayKey()
+        if let i = stepDays.firstIndex(where: { $0.day == key }) {
+            if steps > stepDays[i].ml { stepDays[i].ml = steps } else { return }
+        } else {
+            stepDays.append(WaterDay(day: key, ml: steps))
+            if stepDays.count > 90 { stepDays.removeFirst(stepDays.count - 90) }
+        }
+        if Date().timeIntervalSince(lastStepsSave) > 30 {
+            lastStepsSave = Date()
+            save()
+        }
+    }
+
+    var stepsToday: Int? { stepDays.first { $0.day == Self.dayKey() }?.ml }
+
+    var stepsWeek: [WaterBar] {
+        let cal = Calendar.current
+        let f = DateFormatter(); f.dateFormat = "EEEEE"
+        return (0..<7).map { i in
+            let d = cal.date(byAdding: .day, value: i - 6, to: Date()) ?? Date()
+            let key = Self.dayKey(d)
+            return WaterBar(index: i, label: f.string(from: d), ml: stepDays.first { $0.day == key }?.ml ?? 0)
         }
     }
 

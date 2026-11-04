@@ -47,6 +47,7 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var lastBandBP: (sys: Int, dia: Int)?
     var onHRResult: ((Int) -> Void)?
     var onBPResult: ((Int, Int) -> Void)?
+    var onSteps: ((Int) -> Void)?
     var wpWrite: CBCharacteristic?
     var wpNotify: CBCharacteristic?
     var rx: [UInt8] = []
@@ -54,6 +55,8 @@ final class BLEManager: NSObject, ObservableObject {
     static let wpNotifyUUID = CBUUID(string: "2AAC")
 
     private var central: CBCentralManager!
+    /// iOS cancels a connection if the app doesn't hold on to the band object, so keep it here.
+    private var keep: CBPeripheral?
     private let savedKey = "savedBandID"
 
     static let hrService = CBUUID(string: "180D")
@@ -63,7 +66,9 @@ final class BLEManager: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        central = CBCentralManager(delegate: self, queue: .main)
+        // The restore key lets iOS wake the app for the band after it was paused in the background.
+        central = CBCentralManager(delegate: self, queue: .main,
+                                   options: [CBCentralManagerOptionRestoreIdentifierKey: "band-central"])
     }
 
     func addLog(_ s: String) {
@@ -105,7 +110,8 @@ final class BLEManager: NSObject, ObservableObject {
 
     func connect(_ d: FoundDevice) {
         stopScan()
-        connectedName = d.name
+        keep = d.peripheral
+        connectedName = d.name.replacingOccurrences(of: " · connected", with: "")
         central.connect(d.peripheral, options: nil)
         addLog("Connecting to \(d.name)...")
     }
@@ -126,13 +132,10 @@ final class BLEManager: NSObject, ObservableObject {
         guard let s = UserDefaults.standard.string(forKey: savedKey), let id = UUID(uuidString: s) else { return }
         let known = central.retrievePeripherals(withIdentifiers: [id])
         if let p = known.first {
+            keep = p
             connectedName = p.name ?? "Band"
             central.connect(p, options: nil)
             addLog("Reconnecting to saved band...")
-        }
-        let already = central.retrieveConnectedPeripherals(withServices: [Self.hrService, Self.batService])
-        for p in already where p.identifier == id {
-            central.connect(p, options: nil)
         }
     }
 
@@ -180,6 +183,19 @@ final class BLEManager: NSObject, ObservableObject {
 }
 
 extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
+    func centralManager(_ c: CBCentralManager, willRestoreState dict: [String: Any]) {
+        if let list = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral], let p = list.first {
+            keep = p
+            p.delegate = self
+            connectedName = p.name ?? "Band"
+            if p.state == .connected {
+                connected = p
+                p.discoverServices(nil)
+            }
+            addLog("Restored band connection")
+        }
+    }
+
     func centralManagerDidUpdateState(_ c: CBCentralManager) {
         bluetoothOn = c.state == .poweredOn
         addLog(bluetoothOn ? "Bluetooth is on" : "Bluetooth is off or not allowed")
@@ -228,7 +244,10 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
         bpMeasuring = false
         if !userDisconnected {
             addLog("Will reconnect when the band is near")
+            keep = p
             central.connect(p, options: nil)
+        } else {
+            keep = nil
         }
         userDisconnected = false
     }

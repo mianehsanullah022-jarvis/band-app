@@ -111,6 +111,34 @@ struct VibeSettings: Codable {
     var standPattern = "knock"
     var quietFrom = 23
     var quietTo = 8
+    var autoHR = false
+    var autoHREveryMin = 30
+    var lowBatteryBuzz = true
+
+    init() {}
+
+    // Reads older saved settings that don't have the newer fields.
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        callBuzz = try c.decodeIfPresent(Bool.self, forKey: .callBuzz) ?? true
+        alarms = try c.decodeIfPresent([BandAlarm].self, forKey: .alarms) ?? []
+        waterReminder = try c.decodeIfPresent(Bool.self, forKey: .waterReminder) ?? false
+        waterEveryMin = try c.decodeIfPresent(Int.self, forKey: .waterEveryMin) ?? 60
+        waterPattern = try c.decodeIfPresent(String.self, forKey: .waterPattern) ?? "wave"
+        standReminder = try c.decodeIfPresent(Bool.self, forKey: .standReminder) ?? false
+        standEveryMin = try c.decodeIfPresent(Int.self, forKey: .standEveryMin) ?? 60
+        standPattern = try c.decodeIfPresent(String.self, forKey: .standPattern) ?? "knock"
+        quietFrom = try c.decodeIfPresent(Int.self, forKey: .quietFrom) ?? 23
+        quietTo = try c.decodeIfPresent(Int.self, forKey: .quietTo) ?? 8
+        autoHR = try c.decodeIfPresent(Bool.self, forKey: .autoHR) ?? false
+        autoHREveryMin = try c.decodeIfPresent(Int.self, forKey: .autoHREveryMin) ?? 30
+        lowBatteryBuzz = try c.decodeIfPresent(Bool.self, forKey: .lowBatteryBuzz) ?? true
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case callBuzz, alarms, waterReminder, waterEveryMin, waterPattern, standReminder, standEveryMin,
+             standPattern, quietFrom, quietTo, autoHR, autoHREveryMin, lowBatteryBuzz
+    }
 }
 
 /// Watches calls, alarms and reminders and buzzes the band.
@@ -124,6 +152,9 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate, UNUs
     private var timer: Timer?
     private var lastWater = Date()
     private var lastStand = Date()
+    private var lastAutoHR = Date.distantPast
+    private var lowBatteryWarned = false
+    private weak var ble: BLEManager?
     private let key = "vibeSettings"
 
     override init() {
@@ -138,10 +169,15 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate, UNUs
         let nc = UNUserNotificationCenter.current()
         nc.setNotificationCategories([cat])
         nc.delegate = self
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.tick() }
+        let t = Timer(timeInterval: 10, repeats: true) { [weak self] _ in self?.tick() }
+        RunLoop.main.add(t, forMode: .common)     // keeps ticking while you scroll
+        timer = t
     }
 
-    func attach(_ ble: BLEManager) { player.attach(ble) }
+    func attach(_ ble: BLEManager) {
+        self.ble = ble
+        player.attach(ble)
+    }
 
     func save() {
         if let d = try? JSONEncoder().encode(settings) { UserDefaults.standard.set(d, forKey: key) }
@@ -156,7 +192,14 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate, UNUs
     // Any action on our alarm notification (tap, Stop, or swipe away) stops the band.
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler done: @escaping () -> Void) {
-        DispatchQueue.main.async { self.stopAll() }
+        let id = response.notification.request.identifier
+        DispatchQueue.main.async {
+            // mark that alarm as done for today, so opening the app doesn't start it again
+            if let i = self.settings.alarms.firstIndex(where: { $0.id.uuidString == id }) {
+                self.settings.alarms[i].lastFired = Store.dayKey()
+            }
+            self.stopAll()
+        }
         done()
     }
 
@@ -193,6 +236,23 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate, UNUs
                 alert = a.label.isEmpty ? "Alarm \(a.timeText)" : a.label
                 player.playUntilStopped(Vibes.find("call"), maxSeconds: 60)
                 return
+            }
+        }
+
+        // Automatic heart rate checks (the band measures, results are saved).
+        if settings.autoHR, let b = ble, b.isWPBand, !b.hrMeasuring, !b.bpMeasuring,
+           now.timeIntervalSince(lastAutoHR) >= Double(settings.autoHREveryMin * 60) {
+            lastAutoHR = now
+            b.measureHeartRate()
+        }
+
+        // One gentle buzz when the band battery gets low.
+        if let level = ble?.battery {
+            if level <= 15 && !lowBatteryWarned && settings.lowBatteryBuzz && player.playing == nil {
+                lowBatteryWarned = true
+                player.play(Vibes.find("gentle"))
+            } else if level > 30 {
+                lowBatteryWarned = false
             }
         }
 

@@ -188,6 +188,7 @@ extension BLEManager {
         case (0x04, 0x00) where data.count >= 4:
             let s = (Int(data[0]) << 24) | (Int(data[1]) << 16) | (Int(data[2]) << 8) | Int(data[3])
             steps = s
+            onSteps?(s)
             addLog("Steps today: \(s)")
 
         default:

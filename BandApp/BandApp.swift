@@ -21,6 +21,7 @@ struct BandAppMain: App {
                     ble.onHRResult = { [weak store] bpm in
                         store?.addHRCheck(HRCheck(date: Date(), bpm: bpm, low: bpm, high: bpm))
                     }
+                    ble.onSteps = { [weak store] n in store?.setStepsToday(n) }
                     ble.onBPResult = { [weak store] sys, dia in
                         store?.addBP(BPReading(date: Date(), systolic: sys, diastolic: dia, pulse: nil, fromBand: true))
                     }
