@@ -19,20 +19,98 @@ struct Workout: Codable, Identifiable {
     var duration: TimeInterval { end.timeIntervalSince(start) }
 }
 
+struct BPReading: Codable, Identifiable {
+    var id = UUID()
+    var date: Date
+    var systolic: Int
+    var diastolic: Int
+    var pulse: Int?
+}
+
+struct HRCheck: Codable, Identifiable {
+    var id = UUID()
+    var date: Date
+    var bpm: Int
+    var low: Int
+    var high: Int
+}
+
+struct WaterBar: Identifiable {
+    var id: Int { index }
+    let index: Int
+    let label: String
+    let ml: Int
+}
+
+struct WaterDay: Codable {
+    var day: String
+    var ml: Int
+}
+
 struct Profile: Codable {
     var name: String = ""
     var age: Int = 29
     var weightKg: Double = 70
     var male: Bool = true
+    var waterGoalMl: Int = 2500
+    var glassMl: Int = 250
     var maxHR: Int { Int(208 - 0.7 * Double(age)) }
+
+    init() {}
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        age = try c.decodeIfPresent(Int.self, forKey: .age) ?? 29
+        weightKg = try c.decodeIfPresent(Double.self, forKey: .weightKg) ?? 70
+        male = try c.decodeIfPresent(Bool.self, forKey: .male) ?? true
+        waterGoalMl = try c.decodeIfPresent(Int.self, forKey: .waterGoalMl) ?? 2500
+        glassMl = try c.decodeIfPresent(Int.self, forKey: .glassMl) ?? 250
+    }
+
+    enum CodingKeys: String, CodingKey { case name, age, weightKg, male, waterGoalMl, glassMl }
 }
 
-/// Saves heart-rate history, workouts and the profile on the phone,
-/// and turns heart rate into estimates (strain, calories, zones).
+enum BPCategory {
+    case normal, elevated, stage1, stage2, crisis
+
+    init(sys: Int, dia: Int) {
+        if sys > 180 || dia > 120 { self = .crisis }
+        else if sys >= 140 || dia >= 90 { self = .stage2 }
+        else if sys >= 130 || dia >= 80 { self = .stage1 }
+        else if sys >= 120 { self = .elevated }
+        else { self = .normal }
+    }
+
+    var title: String {
+        switch self {
+        case .normal: return "Normal"
+        case .elevated: return "Elevated"
+        case .stage1: return "High · stage 1"
+        case .stage2: return "High · stage 2"
+        case .crisis: return "Very high"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .normal: return Theme.green
+        case .elevated: return Theme.amber
+        case .stage1: return Theme.orange
+        case .stage2, .crisis: return Theme.red
+        }
+    }
+}
+
+/// Saves heart-rate history, workouts, measurements and the profile on the phone,
+/// and turns heart rate into estimates (strain, calories, zones, recovery).
 final class Store: ObservableObject {
     @Published var profile = Profile() { didSet { save() } }
     @Published var samples: [HRSample] = []
     @Published var workouts: [Workout] = []
+    @Published var bp: [BPReading] = []
+    @Published var hrChecks: [HRCheck] = []
+    @Published var water: [WaterDay] = []
 
     // Live workout
     @Published var activeType: String?
@@ -40,6 +118,7 @@ final class Store: ObservableObject {
     @Published var activeSamples: [HRSample] = []
 
     private var lastSampleTime = Date.distantPast
+    private var loading = false
     private let fileURL: URL = {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return dir.appendingPathComponent("band-data.json")
@@ -49,20 +128,29 @@ final class Store: ObservableObject {
         var profile: Profile
         var samples: [HRSample]
         var workouts: [Workout]
+        var bp: [BPReading]?
+        var hrChecks: [HRCheck]?
+        var water: [WaterDay]?
     }
 
     init() { load() }
 
     func load() {
         guard let d = try? Data(contentsOf: fileURL), let s = try? JSONDecoder().decode(Saved.self, from: d) else { return }
+        loading = true
         samples = s.samples
         workouts = s.workouts
+        bp = s.bp ?? []
+        hrChecks = s.hrChecks ?? []
+        water = s.water ?? []
         profile = s.profile
+        loading = false
         trim()
     }
 
     func save() {
-        let s = Saved(profile: profile, samples: samples, workouts: workouts)
+        if loading { return }
+        let s = Saved(profile: profile, samples: samples, workouts: workouts, bp: bp, hrChecks: hrChecks, water: water)
         if let d = try? JSONEncoder().encode(s) { try? d.write(to: fileURL, options: .atomic) }
     }
 
@@ -74,6 +162,9 @@ final class Store: ObservableObject {
     func resetAll() {
         samples = []
         workouts = []
+        bp = []
+        hrChecks = []
+        water = []
         save()
     }
 
@@ -89,6 +180,58 @@ final class Store: ObservableObject {
         }
     }
 
+    // MARK: Water
+
+    static func dayKey(_ d: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
+    }
+
+    var waterToday: Int { water.first { $0.day == Self.dayKey() }?.ml ?? 0 }
+
+    func addWater(_ ml: Int) {
+        let key = Self.dayKey()
+        if let i = water.firstIndex(where: { $0.day == key }) {
+            water[i].ml = max(0, water[i].ml + ml)
+        } else if ml > 0 {
+            water.append(WaterDay(day: key, ml: ml))
+        }
+        if water.count > 60 { water.removeFirst(water.count - 60) }
+        save()
+    }
+
+    /// Water for the last 7 days, oldest first.
+    var waterWeek: [WaterBar] {
+        let cal = Calendar.current
+        let f = DateFormatter(); f.dateFormat = "EEEEE"
+        return (0..<7).map { i in
+            let d = cal.date(byAdding: .day, value: i - 6, to: Date()) ?? Date()
+            let key = Self.dayKey(d)
+            return WaterBar(index: i, label: f.string(from: d), ml: water.first { $0.day == key }?.ml ?? 0)
+        }
+    }
+
+    // MARK: Blood pressure and heart checks
+
+    func addBP(_ r: BPReading) {
+        bp.append(r)
+        bp.sort { $0.date < $1.date }
+        save()
+    }
+
+    func deleteBP(_ id: UUID) {
+        bp.removeAll { $0.id == id }
+        save()
+    }
+
+    func addHRCheck(_ c: HRCheck) {
+        hrChecks.append(c)
+        if hrChecks.count > 200 { hrChecks.removeFirst(hrChecks.count - 200) }
+        save()
+    }
+
     // MARK: Today
 
     var today: [HRSample] {
@@ -101,11 +244,33 @@ final class Store: ObservableObject {
         return workouts.filter { $0.start >= start }.sorted { $0.start > $1.start }
     }
 
-    /// Lowest steady heart rate seen in the last 2 days (an estimate of resting HR).
+    private func lowHR(_ s: [HRSample]) -> Int? {
+        let v = s.map { $0.bpm }.sorted()
+        guard v.count >= 20 else { return nil }
+        return v[v.count / 20]
+    }
+
+    /// Lowest steady heart rate seen in the last 24 hours (an estimate of resting HR).
     var restingHR: Int? {
-        let recent = samples.filter { $0.t > Date().addingTimeInterval(-2 * 86400) }.map { $0.bpm }.sorted()
-        guard recent.count >= 20 else { return nil }
-        return recent[recent.count / 20]
+        lowHR(samples.filter { $0.t > Date().addingTimeInterval(-86400) })
+            ?? lowHR(samples.filter { $0.t > Date().addingTimeInterval(-3 * 86400) })
+    }
+
+    /// Readiness from how today's resting HR compares with your usual one.
+    /// Needs at least two earlier days of heart-rate data.
+    var recovery: Int? {
+        guard let todayRHR = restingHR else { return nil }
+        let cal = Calendar.current
+        var past: [Int] = []
+        for back in 1...7 {
+            guard let dayStart = cal.date(byAdding: .day, value: -back, to: cal.startOfDay(for: Date())),
+                  let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else { continue }
+            if let r = lowHR(samples.filter { $0.t >= dayStart && $0.t < dayEnd }) { past.append(r) }
+        }
+        guard past.count >= 2 else { return nil }
+        let base = Double(past.reduce(0, +)) / Double(past.count)
+        let score = 66 + (base - Double(todayRHR)) * 6
+        return Int(max(1, min(99, score)))
     }
 
     var todayStrain: Double? {
@@ -209,7 +374,7 @@ final class Store: ObservableObject {
 }
 
 func fmtDuration(_ t: TimeInterval) -> String {
-    let s = Int(t)
+    let s = max(0, Int(t))
     let h = s / 3600, m = (s % 3600) / 60, sec = s % 60
     return h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%d:%02d", m, sec)
 }

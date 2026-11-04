@@ -1,145 +1,194 @@
 import SwiftUI
 
-struct Dial: View {
-    let value: String
-    let label: String
-    let fraction: Double
-    let color: Color
-    var body: some View {
-        VStack(spacing: 6) {
-            ZStack {
-                Circle().stroke(Theme.line, lineWidth: 7)
-                Circle().trim(from: 0, to: max(0, min(1, fraction)))
-                    .stroke(color, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text(value).font(.system(size: 22, weight: .medium, design: .rounded)).monospacedDigit()
-            }
-            .frame(width: 92, height: 92)
-            Label2(t: label)
-        }
-        .foregroundColor(.white)
-    }
-}
-
-struct Sparkline: View {
-    let values: [Int]
-    let color: Color
-    var height: CGFloat = 40
-    var body: some View {
-        GeometryReader { g in
-            if values.count > 1, let lo = values.min(), let hi = values.max() {
-                let span = max(Double(hi - lo), 1)
-                Path { p in
-                    for (i, v) in values.enumerated() {
-                        let x = g.size.width * Double(i) / Double(values.count - 1)
-                        let y = g.size.height * (1 - Double(v - lo) / span)
-                        if i == 0 { p.move(to: CGPoint(x: x, y: y)) } else { p.addLine(to: CGPoint(x: x, y: y)) }
-                    }
-                }
-                .stroke(color, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-            } else {
-                Text("Waiting for live data…").font(.system(size: 12)).foregroundColor(Theme.muted)
-            }
-        }
-        .frame(height: height)
-    }
-}
-
 struct HomeView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var store: Store
+    let goTo: (AppTab) -> Void
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 10) {
-                    header
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 12) {
+                header.appear(0)
 
-                    HStack(spacing: 0) {
-                        NavigationLink { SleepView() } label: {
-                            Dial(value: "90%", label: "Sleep", fraction: 0.9, color: Theme.sleep)
-                        }.frame(maxWidth: .infinity)
-                        Dial(value: "74%", label: "Recovery", fraction: 0.74, color: Theme.green).frame(maxWidth: .infinity)
-                        Dial(value: store.todayStrain.map { String(format: "%.1f", $0) } ?? "--",
-                             label: "Strain", fraction: (store.todayStrain ?? 0) / 21, color: Theme.blue)
-                            .frame(maxWidth: .infinity)
+                HStack(spacing: 0) {
+                    Dial(value: store.recovery.map { "\($0)%" } ?? "--",
+                         label: "Recovery",
+                         fraction: Double(store.recovery ?? 0) / 100,
+                         color: recoveryColor)
+                        .frame(maxWidth: .infinity)
+                    Dial(value: store.todayStrain.map { String(format: "%.1f", $0) } ?? "--",
+                         label: "Strain",
+                         fraction: (store.todayStrain ?? 0) / 21,
+                         color: Theme.blue)
+                        .frame(maxWidth: .infinity)
+                    Button { goTo(.measure) } label: {
+                        Dial(value: String(format: "%.1fL", Double(store.waterToday) / 1000),
+                             label: "Water",
+                             fraction: Double(store.waterToday) / Double(max(store.profile.waterGoalMl, 1)),
+                             color: Theme.water)
                     }
-                    Text("Sleep and recovery are samples · strain is estimated from your heart rate")
-                        .font(.system(size: 11)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+                    .buttonStyle(PressStyle())
+                    .frame(maxWidth: .infinity)
+                }
+                .padding(.vertical, 6)
+                .appear(1)
 
+                if let msg = hint {
                     Card {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Label2(t: "Heart rate · live")
-                                Spacer()
-                                if let hr = ble.heartRate {
-                                    Text("\(hr)").font(.system(size: 22, weight: .medium, design: .rounded)).foregroundColor(Theme.red)
-                                    + Text(" bpm").font(.system(size: 12)).foregroundColor(Theme.muted)
-                                } else {
-                                    Text("--").font(.system(size: 22, weight: .medium)).foregroundColor(Theme.muted)
-                                }
-                            }
-                            Sparkline(values: ble.hrHistory, color: Theme.red)
+                        HStack(spacing: 12) {
+                            IconBadge(symbol: "sparkles", color: Theme.green)
+                            Text(msg).font(.system(size: 13)).foregroundColor(Theme.text.opacity(0.85))
                         }
                     }
+                    .appear(2)
+                }
 
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible())], spacing: 10) {
-                        stat("Resting HR", store.restingHR.map { "\($0) bpm" } ?? "--", real: true)
-                        stat("Calories", store.todayCalories.map { "\($0)" } ?? "--", real: true)
-                        stat("Battery", ble.battery.map { "\($0)%" } ?? "--", real: true)
-                        stat("Steps", "7,842", real: false)
+                Card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            IconBadge(symbol: "heart.fill", color: Theme.red)
+                            Label2(t: "Heart rate · live")
+                            Spacer()
+                            if let hr = ble.heartRate {
+                                PulsingHeart(bpm: hr, size: 14)
+                                Text("\(hr)")
+                                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                                    .contentTransition(.numericText())
+                                    .animation(.easeOut(duration: 0.3), value: hr)
+                                Text("bpm").font(.system(size: 12)).foregroundColor(Theme.muted)
+                            } else {
+                                Text("--").font(.system(size: 26, weight: .semibold, design: .rounded)).foregroundColor(Theme.muted)
+                            }
+                        }
+                        Sparkline(values: ble.hrHistory, color: Theme.red)
                     }
+                }
+                .appear(3)
 
-                    Card {
-                        VStack(alignment: .leading, spacing: 8) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
+                    stat("Resting HR", "heart.circle.fill", Theme.red, store.restingHR.map { Double($0) }, unit: "bpm").appear(4)
+                    stat("Calories", "flame.fill", Theme.orange, store.todayCalories.map { Double($0) }, unit: "kcal").appear(5)
+                    stat("Battery", "battery.75", Theme.green, ble.battery.map { Double($0) }, unit: "%").appear(6)
+                    bpStat.appear(7)
+                }
+
+                Button { goTo(.measure) } label: {
+                    HStack(spacing: 12) {
+                        IconBadge(symbol: "waveform.path.ecg", color: Theme.green, size: 36)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Measure now").font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text)
+                            Text("Heart rate, heart rhythm, blood pressure, water").font(.system(size: 12)).foregroundColor(Theme.muted)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundColor(Theme.muted)
+                    }
+                    .padding(14)
+                    .background(Theme.card)
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Theme.green.opacity(0.35), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(PressStyle())
+                .appear(8)
+
+                Card {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            IconBadge(symbol: "figure.run", color: Theme.blue)
                             Label2(t: "Today's activities")
-                            if store.todayWorkouts.isEmpty {
-                                Text("No activities yet. Tap Start to record one.")
-                                    .font(.system(size: 13)).foregroundColor(Theme.muted)
+                            Spacer()
+                            Button("Start") { goTo(.start) }.font(.system(size: 13, weight: .semibold))
+                        }
+                        if store.todayWorkouts.isEmpty {
+                            Text("No activities yet today.").font(.system(size: 13)).foregroundColor(Theme.muted)
+                        }
+                        ForEach(store.todayWorkouts) { w in
+                            HStack {
+                                Text("\(w.type) · \(fmtDuration(w.duration))").font(.system(size: 14)).foregroundColor(Theme.text)
+                                Spacer()
+                                Text(String(format: "%.1f", w.strain))
+                                    .font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundColor(Theme.blue)
                             }
-                            ForEach(store.todayWorkouts) { w in
-                                HStack {
-                                    Text("\(w.type) · \(fmtDuration(w.duration))").font(.system(size: 14))
-                                    Spacer()
-                                    Text(String(format: "%.1f", w.strain)).font(.system(size: 16, weight: .medium, design: .rounded)).foregroundColor(Theme.blue)
-                                }
-                                .padding(.vertical, 4)
-                            }
+                            .padding(.vertical, 2)
                         }
                     }
                 }
-                .padding(16)
+                .appear(9)
             }
-            .background(Theme.bg.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 20)
         }
+        .background(Theme.bg.ignoresSafeArea())
+    }
+
+    var recoveryColor: Color {
+        guard let r = store.recovery else { return Theme.green }
+        return r >= 67 ? Theme.green : (r >= 34 ? Theme.amber : Theme.red)
+    }
+
+    var hint: String? {
+        if ble.connected == nil { return "Your band isn't connected. Go to More → Connect band." }
+        if store.recovery == nil { return "Wear your band for 3 days and your daily Recovery score appears here." }
+        return nil
     }
 
     var header: some View {
-        HStack {
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Date(), format: .dateTime.weekday(.wide).day().month())
-                    .font(.system(size: 12)).foregroundColor(Theme.muted)
+                    .font(.system(size: 13)).foregroundColor(Theme.muted)
                 Text(store.profile.name.isEmpty ? "Today" : "Hi, \(store.profile.name)")
-                    .font(.system(size: 26, weight: .semibold))
+                    .font(.system(size: 30, weight: .bold)).foregroundColor(Theme.text)
             }
             Spacer()
-            HStack(spacing: 6) {
-                Circle().fill(ble.connected == nil ? Theme.red : Theme.green).frame(width: 8, height: 8)
-                Text(ble.connected == nil ? "Not connected" : "\(ble.connectedName)\(ble.battery.map { " · \($0)%" } ?? "")")
-                    .font(.system(size: 12)).foregroundColor(.white.opacity(0.8))
+            Button { goTo(.more) } label: {
+                HStack(spacing: 6) {
+                    Circle().fill(ble.connected == nil ? Theme.red : Theme.green).frame(width: 8, height: 8)
+                    Text(ble.connected == nil ? "Not connected" : "\(ble.connectedName)\(ble.battery.map { " · \($0)%" } ?? "")")
+                        .font(.system(size: 12, weight: .medium)).foregroundColor(Theme.text.opacity(0.85))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Theme.card).clipShape(Capsule())
+                .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(Theme.card).clipShape(Capsule())
+            .buttonStyle(PressStyle())
         }
-        .padding(.bottom, 6)
     }
 
-    func stat(_ title: String, _ value: String, real: Bool) -> some View {
+    func stat(_ title: String, _ symbol: String, _ color: Color, _ value: Double?, unit: String) -> some View {
         Card {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack { Label2(t: title); Spacer(); if !real { SampleTag() } }
-                Text(value).font(.system(size: 24, weight: .medium, design: .rounded)).monospacedDigit()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    IconBadge(symbol: symbol, color: color, size: 26)
+                    Label2(t: title)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    if let v = value {
+                        CountText(value: v, size: 24)
+                    } else {
+                        Text("--").font(.system(size: 24, weight: .semibold, design: .rounded)).foregroundColor(Theme.muted)
+                    }
+                    Text(unit).font(.system(size: 12)).foregroundColor(Theme.muted)
+                }
+            }
+        }
+    }
+
+    var bpStat: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    IconBadge(symbol: "drop.fill", color: Theme.purple, size: 26)
+                    Label2(t: "Blood pressure")
+                }
+                if let last = store.bp.last {
+                    Text("\(last.systolic)/\(last.diastolic)")
+                        .font(.system(size: 24, weight: .semibold, design: .rounded)).foregroundColor(Theme.text)
+                } else {
+                    Text("--").font(.system(size: 24, weight: .semibold, design: .rounded)).foregroundColor(Theme.muted)
+                }
             }
         }
     }
