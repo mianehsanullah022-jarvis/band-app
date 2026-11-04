@@ -62,8 +62,26 @@ extension BLEManager {
     }
 
     /// Makes the band vibrate ("Find band" in Podsfine).
+    /// Candidate vibrate commands seen in the Podsfine recording around "Find device".
+    /// (group, flag, id). Method 1 is the most likely one.
+    static let vibrateMethods: [(UInt8, UInt8, UInt8)] = [
+        (0x06, 0x04, 0x00),
+        (0x06, 0x01, 0x00),
+        (0x06, 0x01, 0x12),
+    ]
+
+    var vibrateMethod: Int {
+        get { min(UserDefaults.standard.integer(forKey: "vibrateMethod"), Self.vibrateMethods.count - 1) }
+        set { UserDefaults.standard.set(newValue, forKey: "vibrateMethod"); objectWillChange.send() }
+    }
+
     func findBand() {
-        wpSend(group: 0x06, flag: 0x01, id: 0x0F, data: [0x01], log: "find band")
+        sendVibrate(method: vibrateMethod)
+    }
+
+    func sendVibrate(method: Int) {
+        let m = Self.vibrateMethods[min(max(method, 0), Self.vibrateMethods.count - 1)]
+        wpSend(group: m.0, flag: m.1, id: m.2, data: [0x01], log: "vibrate (method \(method + 1))")
     }
 
     /// Buzzes the band several times in a row.

@@ -17,6 +17,33 @@ struct VibrationView: View {
             }
 
             Section {
+                ForEach(0..<BLEManager.vibrateMethods.count, id: \.self) { i in
+                    Button {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        ble.vibrateMethod = i
+                        ble.sendVibrate(method: i)
+                    } label: {
+                        HStack(spacing: 12) {
+                            IconBadge(symbol: "\(i + 1).circle.fill", color: ble.vibrateMethod == i ? Theme.green : Theme.muted)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Vibrate method \(i + 1)").font(.system(size: 15, weight: .medium)).foregroundColor(Theme.text)
+                                Text(ble.vibrateMethod == i ? "In use · tap to test again" : "Tap to test and use this one")
+                                    .font(.system(size: 12)).foregroundColor(Theme.muted)
+                            }
+                            Spacer()
+                            if ble.vibrateMethod == i {
+                                Image(systemName: "checkmark.circle.fill").foregroundColor(Theme.green).font(.system(size: 22))
+                            }
+                        }
+                    }
+                    .listRowBackground(Theme.card)
+                    .disabled(!ble.isWPBand)
+                }
+            } header: { Text("Step 1 · Find the buzz") } footer: {
+                Text("Tap each method. Keep the one that makes your band vibrate. All patterns below use it.")
+            }
+
+            Section {
                 ForEach(Vibes.all) { p in
                     Button {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -39,7 +66,7 @@ struct VibrationView: View {
                     .listRowBackground(Theme.card)
                     .disabled(!ble.isWPBand)
                 }
-            } header: { Text("Patterns · tap to feel") }
+            } header: { Text("Step 2 · Patterns, tap to feel") }
 
             Section {
                 Toggle(isOn: $vibes.settings.callBuzz) {
