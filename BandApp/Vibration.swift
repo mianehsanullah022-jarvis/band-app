@@ -11,23 +11,25 @@ struct VibePattern: Identifiable, Hashable {
     let name: String
     let symbol: String
     let times: [Double]
-    var buzz: Double = 0.5          // how long each buzz lasts, in seconds
-    var length: Double { (times.last ?? 0) + buzz + 1.0 }
+    var buzz: Double = 1.0          // how long each buzz lasts, in seconds (band minimum is 1)
+    var length: Double { (times.last ?? 0) + buzz + 1.3 }
 }
 
 enum Vibes {
+    // Timing rule (from the recording): the band answers each command after ~1 second,
+    // so every buzz is at least 1 s long and the next buzz starts at least 1.3 s after a stop.
     static let all: [VibePattern] = [
-        VibePattern(id: "single", name: "Single", symbol: "1.circle.fill", times: [0], buzz: 0.5),
-        VibePattern(id: "double", name: "Double", symbol: "2.circle.fill", times: [0, 0.9], buzz: 0.45),
-        VibePattern(id: "triple", name: "Triple", symbol: "3.circle.fill", times: [0, 0.8, 1.6], buzz: 0.4),
-        VibePattern(id: "heartbeat", name: "Heartbeat", symbol: "heart.fill", times: [0, 0.6, 1.8, 2.4], buzz: 0.3),
-        VibePattern(id: "knock", name: "Knock knock", symbol: "hand.raised.fill", times: [0, 0.7, 2.2], buzz: 0.35),
-        VibePattern(id: "wave", name: "Wave", symbol: "water.waves", times: [0, 1.0, 2.2, 3.6, 5.2], buzz: 0.6),
-        VibePattern(id: "rush", name: "Rush", symbol: "bolt.fill", times: [0, 0.5, 1.0, 1.5, 2.0, 2.5], buzz: 0.3),
-        VibePattern(id: "sos", name: "SOS", symbol: "sos", times: [0, 0.6, 1.2, 2.2, 3.4, 4.6, 5.8, 6.4, 7.0], buzz: 0.3),
-        VibePattern(id: "long", name: "Long", symbol: "minus.circle.fill", times: [0], buzz: 2.0),
-        VibePattern(id: "gentle", name: "Gentle", symbol: "leaf.fill", times: [0, 3.0], buzz: 0.25),
-        VibePattern(id: "call", name: "Call (non-stop)", symbol: "phone.fill", times: [0, 2.0], buzz: 1.5),
+        VibePattern(id: "single", name: "Single", symbol: "1.circle.fill", times: [0], buzz: 1.0),
+        VibePattern(id: "double", name: "Double", symbol: "2.circle.fill", times: [0, 2.4], buzz: 1.0),
+        VibePattern(id: "triple", name: "Triple", symbol: "3.circle.fill", times: [0, 2.4, 4.8], buzz: 1.0),
+        VibePattern(id: "long", name: "Long", symbol: "minus.circle.fill", times: [0], buzz: 3.0),
+        VibePattern(id: "heartbeat", name: "Heartbeat", symbol: "heart.fill", times: [0, 2.3, 5.8, 8.1], buzz: 1.0),
+        VibePattern(id: "knock", name: "Knock knock", symbol: "hand.raised.fill", times: [0, 2.3, 6.0], buzz: 1.0),
+        VibePattern(id: "wave", name: "Wave", symbol: "water.waves", times: [0, 3.6, 7.2], buzz: 2.0),
+        VibePattern(id: "rush", name: "Rush", symbol: "bolt.fill", times: [0, 2.3, 4.6, 6.9, 9.2], buzz: 1.0),
+        VibePattern(id: "sos", name: "SOS", symbol: "sos", times: [0, 2.3, 4.6, 7.8, 11.4, 15.0, 18.2, 20.5, 22.8], buzz: 1.0),
+        VibePattern(id: "gentle", name: "Gentle", symbol: "leaf.fill", times: [0, 5.0], buzz: 1.0),
+        VibePattern(id: "call", name: "Call (non-stop)", symbol: "phone.fill", times: [0, 3.4], buzz: 2.0),
     ]
 
     static func find(_ id: String) -> VibePattern { all.first { $0.id == id } ?? all[0] }

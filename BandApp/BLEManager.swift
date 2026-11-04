@@ -49,6 +49,9 @@ final class BLEManager: NSObject, ObservableObject {
     var onBPResult: ((Int, Int) -> Void)?
     var onSteps: ((Int) -> Void)?
     var buzzSeq = 0
+    var txQueue: [WPOut] = []
+    var txWaiting: (UInt8, UInt8)?
+    var txSeq = 0
     var wpWrite: CBCharacteristic?
     var wpNotify: CBCharacteristic?
     var rx: [UInt8] = []
@@ -238,6 +241,7 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
         addLog("Disconnected")
         connected = nil
         isWPBand = false
+        wpResetQueue()
         wpWrite = nil
         wpNotify = nil
         rx = []

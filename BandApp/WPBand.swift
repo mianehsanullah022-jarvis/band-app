@@ -1,6 +1,15 @@
 import Foundation
 import CoreBluetooth
 
+/// A message waiting to be sent to the band.
+struct WPOut {
+    let group: UInt8
+    let flag: UInt8
+    let id: UInt8
+    let data: [UInt8]
+    let log: String
+}
+
 /// The WP band's own language, learned from a recording of the Podsfine app.
 ///
 /// Every message is a frame:
@@ -18,14 +27,46 @@ extension BLEManager {
         return [head, 0x00, UInt8(payload.count), UInt8(sum & 0xFF)] + payload
     }
 
+    /// Messages go one at a time: the band answers each one ("got it") after about
+    /// a second, and Podsfine always waits for that answer before sending the next.
     func wpSend(group: UInt8, flag: UInt8 = 0x04, id: UInt8, data: [UInt8], log: String? = nil) {
-        guard let p = connected, let ch = wpWrite else {
+        guard connected != nil, wpWrite != nil else {
             addLog("Band not ready yet")
             return
         }
-        let frame = Self.wpFrame(head: 0xDF, group: group, flag: flag, id: id, data: data)
+        txQueue.append(WPOut(group: group, flag: flag, id: id, data: data, log: log ?? "send"))
+        wpPump()
+    }
+
+    private func wpPump() {
+        guard txWaiting == nil, !txQueue.isEmpty, let p = connected, let ch = wpWrite else { return }
+        let m = txQueue.removeFirst()
+        let frame = Self.wpFrame(head: 0xDF, group: m.group, flag: m.flag, id: m.id, data: m.data)
         p.writeValue(Data(frame), for: ch, type: .withoutResponse)
-        addLog("▶ \(log ?? "send"): \(hexString(Data(frame)))")
+        addLog("▶ \(m.log): \(hexString(Data(frame)))")
+        txWaiting = (m.group, m.id)
+        txSeq += 1
+        let n = txSeq
+        // If the band doesn't answer within 2 seconds, move on anyway.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self = self, self.txSeq == n, self.txWaiting != nil else { return }
+            self.txWaiting = nil
+            self.wpPump()
+        }
+    }
+
+    /// The band said "got it" to one of our messages.
+    private func wpGotAck(group: UInt8, id: UInt8) {
+        if let w = txWaiting, w.0 == group, w.1 == id {
+            txWaiting = nil
+            wpPump()
+        }
+    }
+
+    func wpResetQueue() {
+        txQueue.removeAll()
+        txWaiting = nil
+        txSeq += 1
     }
 
     private func wpAck(group: UInt8, id: UInt8) {
@@ -39,15 +80,14 @@ extension BLEManager {
     /// Called once the band is ready to talk.
     func wpStart() {
         addLog("Talking to the band…")
-        stopVibrate()     // make sure the band isn't left buzzing from before
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.wpRefresh() }
+        wpResetQueue()
+        vibrateStop()      // if the band was left buzzing earlier, this quiets it
+        wpRefresh()
     }
 
     func wpRefresh() {
         wpSend(group: 0x11, id: 0x00, data: [0x01], log: "battery?")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.wpSend(group: 0x02, id: 0x12, data: [0x00, 0x00], log: "today?")
-        }
+        wpSend(group: 0x02, id: 0x12, data: [0x00, 0x00], log: "today?")
     }
 
     func measureHeartRate() {
@@ -62,18 +102,17 @@ extension BLEManager {
         timeoutMeasuring()
     }
 
-    /// Makes the band vibrate ("Find band" in Podsfine).
-    /// Candidate vibrate commands seen in the Podsfine recording around "Find device".
-    /// (group, flag, id). Method 1 is the most likely one.
-    static let vibrateMethods: [(UInt8, UInt8, UInt8)] = [
-        (0x06, 0x04, 0x00),
-        (0x06, 0x01, 0x00),
-        (0x06, 0x01, 0x12),
-    ]
+    // Vibration, exactly as Podsfine's "Find device" does it (from the recording):
+    //   start: group 06, flag 04, id 00, data 01   → band buzzes and keeps buzzing
+    //   stop:  group 06, flag 01, id 0F, data 01   → band stops
+    // Podsfine never sends "data 00" for these, so neither do we.
 
-    var vibrateMethod: Int {
-        get { min(UserDefaults.standard.integer(forKey: "vibrateMethod"), Self.vibrateMethods.count - 1) }
-        set { UserDefaults.standard.set(newValue, forKey: "vibrateMethod"); objectWillChange.send() }
+    func vibrateStart() {
+        wpSend(group: 0x06, flag: 0x04, id: 0x00, data: [0x01], log: "vibrate START")
+    }
+
+    func vibrateStop() {
+        wpSend(group: 0x06, flag: 0x01, id: 0x0F, data: [0x01], log: "vibrate STOP")
     }
 
     /// "Find my band": buzz for 3 seconds, then stop.
@@ -81,44 +120,25 @@ extension BLEManager {
         buzzOnce(seconds: 3)
     }
 
-    func sendVibrate(method: Int, on: Bool = true) {
-        let m = Self.vibrateMethods[min(max(method, 0), Self.vibrateMethods.count - 1)]
-        wpSend(group: m.0, flag: m.1, id: m.2, data: [on ? 0x01 : 0x00],
-               log: "vibrate \(on ? "on" : "off") (method \(method + 1))")
-    }
-
-    /// One buzz of a set length: start, then stop.
-    func buzzOnce(seconds: Double = 0.6) {
-        let m = vibrateMethod
+    /// One buzz: start, then stop after `seconds`. The band needs about a second
+    /// per message, so buzzes shorter than 1 second aren't possible.
+    func buzzOnce(seconds: Double = 1.0) {
         buzzSeq += 1
         let n = buzzSeq
-        sendVibrate(method: m, on: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            guard let self = self, self.buzzSeq == n else { return }   // a newer buzz will stop itself
-            self.sendVibrate(method: m, on: false)
-        }
-        // send "stop" a second time in case the first one got lost, unless a new buzz has started
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.25) { [weak self] in
-            guard let self = self, self.buzzSeq == n else { return }
-            self.sendVibrate(method: m, on: false)
+        vibrateStart()
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(seconds, 1.0)) { [weak self] in
+            guard let self = self, self.buzzSeq == n else { return }   // stopVibrate already stopped it
+            self.vibrateStop()
         }
     }
 
-    /// Sends "stop" for every vibrate method, so the band goes quiet whatever started it.
+    /// Stops the band now: drops anything waiting to be sent, then sends "stop"
+    /// right away and once more a little later, in case the first one is missed.
     func stopVibrate() {
         buzzSeq += 1
-        for i in 0..<Self.vibrateMethods.count {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.15) { [weak self] in
-                self?.sendVibrate(method: i, on: false)
-            }
-        }
-    }
-
-    /// Buzzes the band several times in a row.
-    func buzz(times: Int, gap: Double = 2.5) {
-        for i in 0..<times {
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * gap) { [weak self] in self?.buzzOnce(seconds: 0.6) }
-        }
+        wpResetQueue()
+        vibrateStop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in self?.vibrateStop() }
     }
 
     private func timeoutMeasuring() {
@@ -152,7 +172,10 @@ extension BLEManager {
         let len = Int(p[4])
         let data = Array(p.dropFirst(5).prefix(len))
 
-        if f[0] == 0xFD { return }          // band saying "got it"
+        if f[0] == 0xFD {                   // band saying "got it" to our message
+            wpGotAck(group: group, id: id)
+            return
+        }
         wpAck(group: group, id: id)         // we say "got it" back, like Podsfine
 
         switch (group, id) {

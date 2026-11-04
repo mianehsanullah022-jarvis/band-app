@@ -34,31 +34,27 @@ struct VibrationView: View {
             }
 
             Section {
-                ForEach(0..<BLEManager.vibrateMethods.count, id: \.self) { i in
-                    Button {
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                        ble.vibrateMethod = i
-                        ble.stopVibrate()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { ble.buzzOnce(seconds: 1.0) }
-                    } label: {
-                        HStack(spacing: 12) {
-                            IconBadge(symbol: "\(i + 1).circle.fill", color: ble.vibrateMethod == i ? Theme.green : Theme.muted)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Vibrate method \(i + 1)").font(.system(size: 15, weight: .medium)).foregroundColor(Theme.text)
-                                Text(ble.vibrateMethod == i ? "In use · tap to test again" : "Tap to test and use this one")
-                                    .font(.system(size: 12)).foregroundColor(Theme.muted)
-                            }
-                            Spacer()
-                            if ble.vibrateMethod == i {
-                                Image(systemName: "checkmark.circle.fill").foregroundColor(Theme.green).font(.system(size: 22))
-                            }
-                        }
-                    }
-                    .listRowBackground(Theme.card)
-                    .disabled(!ble.isWPBand)
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    player.stop()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { ble.buzzOnce(seconds: 1.0) }
+                } label: {
+                    rowLabel("Test buzz", "Buzzes for 1 second, then stops", "hand.tap.fill", Theme.green)
                 }
-            } header: { Text("Step 1 · Find the buzz") } footer: {
-                Text("Tap each method: the band should buzz for 1 second and then stop. Keep the one that does that. All patterns use it.")
+                .listRowBackground(Theme.card)
+                .disabled(!ble.isWPBand)
+
+                Button {
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                    player.stop()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { ble.findBand() }
+                } label: {
+                    rowLabel("Find my band", "Buzzes for 3 seconds, then stops", "bell.and.waves.left.and.right.fill", Theme.amber)
+                }
+                .listRowBackground(Theme.card)
+                .disabled(!ble.isWPBand)
+            } header: { Text("Test") } footer: {
+                Text("Your band answers each command after about 1 second, so every buzz lasts at least 1 second.")
             }
 
             Section {
@@ -84,7 +80,7 @@ struct VibrationView: View {
                     .listRowBackground(Theme.card)
                     .disabled(!ble.isWPBand)
                 }
-            } header: { Text("Step 2 · Patterns, tap to feel") }
+            } header: { Text("Patterns · tap to feel") }
 
             Section {
                 Toggle(isOn: $vibes.settings.callBuzz) {
