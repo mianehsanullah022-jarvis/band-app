@@ -38,6 +38,21 @@ final class BLEManager: NSObject, ObservableObject {
     @Published var hrHistory: [Int] = []
     var onHeartRate: ((Int) -> Void)?
 
+    // WP band (Podsfine) protocol
+    @Published var isWPBand = false
+    @Published var steps: Int?
+    @Published var hrMeasuring = false
+    @Published var bpMeasuring = false
+    @Published var lastBandHR: Int?
+    @Published var lastBandBP: (sys: Int, dia: Int)?
+    var onHRResult: ((Int) -> Void)?
+    var onBPResult: ((Int, Int) -> Void)?
+    var wpWrite: CBCharacteristic?
+    var wpNotify: CBCharacteristic?
+    var rx: [UInt8] = []
+    static let wpWriteUUID = CBUUID(string: "2AAD")
+    static let wpNotifyUUID = CBUUID(string: "2AAC")
+
     private var central: CBCentralManager!
     private let savedKey = "savedBandID"
 
@@ -205,6 +220,12 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
     func centralManager(_ c: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) {
         addLog("Disconnected")
         connected = nil
+        isWPBand = false
+        wpWrite = nil
+        wpNotify = nil
+        rx = []
+        hrMeasuring = false
+        bpMeasuring = false
         if !userDisconnected {
             addLog("Will reconnect when the band is near")
             central.connect(p, options: nil)
@@ -224,6 +245,12 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
             let info = CharInfo(service: s.uuid.uuidString, uuid: ch.uuid.uuidString, props: propsString(ch.properties), characteristic: ch)
             chars.append(info)
             addLog("  char \(ch.uuid.uuidString) [\(info.props)]")
+            if ch.uuid == Self.wpWriteUUID { wpWrite = ch }
+            if ch.uuid == Self.wpNotifyUUID { wpNotify = ch }
+            if wpWrite != nil && wpNotify != nil && !isWPBand {
+                isWPBand = true
+                addLog("This is a WP band. Using its own language.")
+            }
             if ch.properties.contains(.notify) || ch.properties.contains(.indicate) {
                 p.setNotifyValue(true, for: ch)
             }
@@ -248,12 +275,18 @@ extension BLEManager: CBCentralManagerDelegate, CBPeripheralDelegate {
         if ch.uuid == Self.batLevel, let b = d.first {
             battery = Int(b)
         }
+        if ch.uuid == Self.wpNotifyUUID {
+            wpReceive([UInt8](d))
+        }
         let ascii = String(data: d, encoding: .utf8).map { $0.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value < 127 } ? "  \"\($0)\"" : "" } ?? ""
         addLog("◀ \(short(ch.uuid.uuidString)): \(hexString(d))\(ascii)")
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor ch: CBCharacteristic, error: Error?) {
         if let e = error { addLog("  notify fail \(short(ch.uuid.uuidString)): \(e.localizedDescription)") }
+        if ch.uuid == Self.wpNotifyUUID && ch.isNotifying {
+            wpStart()
+        }
     }
 
     func peripheral(_ p: CBPeripheral, didWriteValueFor ch: CBCharacteristic, error: Error?) {

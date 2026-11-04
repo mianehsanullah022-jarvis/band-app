@@ -25,6 +25,7 @@ struct BPReading: Codable, Identifiable {
     var systolic: Int
     var diastolic: Int
     var pulse: Int?
+    var fromBand: Bool? = nil
 }
 
 struct HRCheck: Codable, Identifiable {

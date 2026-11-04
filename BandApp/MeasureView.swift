@@ -86,111 +86,97 @@ struct MeasureView: View {
     }
 }
 
-// MARK: Heart rate (30 second check)
+// MARK: Heart rate (band measures it)
+
+struct SpinningRing: View {
+    let color: Color
+    @State private var spin = false
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.28)
+            .stroke(color, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+            .rotationEffect(.degrees(spin ? 360 : 0))
+            .shadow(color: color.opacity(0.6), radius: 8)
+            .onAppear { withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) { spin = true } }
+    }
+}
 
 struct HRMeasureView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var store: Store
-    @State private var measuring = false
-    @State private var start = Date()
-    @State private var values: [Int] = []
-    @State private var result: HRCheck?
-    let length: Double = 30
+    @State private var started = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 20) {
-                TimelineView(.periodic(from: .now, by: 0.1)) { ctx in
-                    let elapsed = measuring ? min(length, ctx.date.timeIntervalSince(start)) : 0
-                    ZStack {
-                        Circle().stroke(Theme.line, lineWidth: 14)
-                        Circle().trim(from: 0, to: measuring ? elapsed / length : (result == nil ? 0 : 1))
-                            .stroke(Theme.red, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                            .shadow(color: Theme.red.opacity(0.5), radius: 8)
-                        VStack(spacing: 6) {
-                            PulsingHeart(bpm: ble.heartRate, size: 34)
-                            Text(display)
-                                .font(.system(size: 54, weight: .bold, design: .rounded))
-                                .monospacedDigit()
-                                .foregroundColor(Theme.text)
-                                .contentTransition(.numericText())
-                            Text(measuring ? "\(Int(length - elapsed)) sec left" : "bpm")
-                                .font(.system(size: 14)).foregroundColor(Theme.muted)
-                        }
+                ZStack {
+                    Circle().stroke(Theme.line, lineWidth: 14)
+                    if ble.hrMeasuring {
+                        SpinningRing(color: Theme.red)
+                    } else if ble.lastBandHR != nil {
+                        Ring(fraction: 1, color: Theme.red, lineWidth: 14)
                     }
-                    .frame(width: 240, height: 240)
-                    .onChange(of: elapsed >= length) { finished in if finished && measuring { finish() } }
+                    VStack(spacing: 6) {
+                        PulsingHeart(bpm: ble.hrMeasuring ? 75 : ble.lastBandHR, size: 34)
+                        Text(ble.hrMeasuring ? "…" : (ble.lastBandHR.map { "\($0)" } ?? "--"))
+                            .font(.system(size: 54, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(Theme.text)
+                            .contentTransition(.numericText())
+                            .animation(.easeOut, value: ble.lastBandHR)
+                        Text(ble.hrMeasuring ? "Measuring… keep still" : "bpm")
+                            .font(.system(size: 14)).foregroundColor(Theme.muted)
+                    }
                 }
+                .frame(width: 240, height: 240)
                 .padding(.top, 10)
                 .appear(0)
 
                 if ble.connected == nil {
                     Text("Connect your band first: More → Connect band.")
                         .font(.system(size: 14)).foregroundColor(Theme.amber).multilineTextAlignment(.center)
-                } else if ble.heartRate == nil {
-                    Text("Your band hasn't sent heart rate yet. Keep it snug on your wrist.")
+                } else if !ble.isWPBand {
+                    Text("Getting your band ready… wait a few seconds.")
                         .font(.system(size: 14)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
                 }
 
-                if let r = result, !measuring {
+                BigButton(title: ble.hrMeasuring ? "Measuring…" : (started ? "Measure again" : "Measure heart rate"),
+                          symbol: "heart.fill", color: Theme.red, textColor: .white) {
+                    started = true
+                    ble.measureHeartRate()
+                }
+                .disabled(!ble.isWPBand || ble.hrMeasuring)
+                .opacity(!ble.isWPBand || ble.hrMeasuring ? 0.5 : 1)
+
+                Text("Your band takes about 15 seconds. Sit still with the band snug on your wrist.")
+                    .font(.system(size: 12)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
+
+                if !store.hrChecks.isEmpty {
                     Card {
-                        HStack {
-                            stat("Average", r.bpm)
-                            stat("Lowest", r.low)
-                            stat("Highest", r.high)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label2(t: "History")
+                            ForEach(store.hrChecks.suffix(10).reversed()) { c in
+                                HStack {
+                                    Image(systemName: "heart.fill").foregroundColor(Theme.red).font(.system(size: 12))
+                                    Text("\(c.bpm) bpm").font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundColor(Theme.text)
+                                    Spacer()
+                                    Text(c.date, format: .dateTime.day().month().hour().minute())
+                                        .font(.system(size: 12)).foregroundColor(Theme.muted)
+                                }
+                            }
                         }
                     }
                     .appear(1)
                 }
-
-                if measuring {
-                    BigButton(title: "Stop", symbol: "stop.fill", color: Theme.card, textColor: Theme.text) { measuring = false }
-                } else {
-                    BigButton(title: result == nil ? "Start 30-second check" : "Measure again", symbol: "heart.fill",
-                              color: Theme.red, textColor: .white) {
-                        values = []
-                        result = nil
-                        start = Date()
-                        withAnimation { measuring = true }
-                    }
-                    .disabled(ble.heartRate == nil)
-                    .opacity(ble.heartRate == nil ? 0.5 : 1)
-                }
-
-                Text("Sit still and breathe normally while measuring.")
-                    .font(.system(size: 12)).foregroundColor(Theme.muted)
             }
             .padding(16)
         }
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle("Heart rate")
         .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: ble.heartRate) { v in
-            if measuring, let v = v { values.append(v) }
+        .onChange(of: ble.lastBandHR) { v in
+            if v != nil { UINotificationFeedbackGenerator().notificationOccurred(.success) }
         }
-    }
-
-    var display: String {
-        if let r = result, !measuring { return "\(r.bpm)" }
-        return ble.heartRate.map { "\($0)" } ?? "--"
-    }
-
-    func finish() {
-        measuring = false
-        guard !values.isEmpty else { return }
-        let c = HRCheck(date: Date(), bpm: values.reduce(0, +) / values.count, low: values.min() ?? 0, high: values.max() ?? 0)
-        store.addHRCheck(c)
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        withAnimation(Theme.spring) { result = c }
-    }
-
-    func stat(_ t: String, _ v: Int) -> some View {
-        VStack(spacing: 4) {
-            Label2(t: t)
-            CountText(value: Double(v), size: 24)
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -242,16 +228,23 @@ struct RhythmView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay {
                     if ble.heartRate == nil {
-                        Text(ble.connected == nil ? "Connect your band to see your heartbeat" : "Waiting for your heartbeat…")
+                        Text(ble.connected == nil ? "Connect your band to see your heartbeat" : "Measure your heart rate to start the wave")
                             .font(.system(size: 14)).foregroundColor(Theme.muted)
                     }
                 }
                 .appear(1)
 
+                BigButton(title: ble.hrMeasuring ? "Measuring…" : "Measure heart rate", symbol: "heart.fill",
+                          color: Theme.green, textColor: .black) {
+                    ble.measureHeartRate()
+                }
+                .disabled(!ble.isWPBand || ble.hrMeasuring)
+                .opacity(!ble.isWPBand || ble.hrMeasuring ? 0.5 : 1)
+
                 Card {
                     HStack(alignment: .top, spacing: 12) {
                         IconBadge(symbol: "info.circle.fill", color: Theme.muted)
-                        Text("This wave is drawn live from your band's heart rate, so it beats at your real speed. It is not a medical ECG.")
+                        Text("This wave is drawn from your band's heart rate, so it beats at your real speed. It is not a medical ECG.")
                             .font(.system(size: 13)).foregroundColor(Theme.text.opacity(0.8))
                     }
                 }
@@ -285,6 +278,7 @@ struct RhythmView: View {
 
 struct BPView: View {
     @EnvironmentObject var store: Store
+    @EnvironmentObject var ble: BLEManager
     @State private var sys = 120
     @State private var dia = 80
     @State private var pulse = 72
@@ -294,10 +288,50 @@ struct BPView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 12) {
                 Card {
+                    VStack(spacing: 14) {
+                        HStack(spacing: 10) {
+                            IconBadge(symbol: "applewatch.radiowaves.left.and.right", color: Theme.purple)
+                            Label2(t: "Measure with your band")
+                            Spacer()
+                        }
+                        ZStack {
+                            Circle().stroke(Theme.line, lineWidth: 12)
+                            if ble.bpMeasuring { SpinningRing(color: Theme.purple) }
+                            VStack(spacing: 2) {
+                                if ble.bpMeasuring {
+                                    Text("…").font(.system(size: 36, weight: .bold, design: .rounded)).foregroundColor(Theme.text)
+                                    Text("Keep still").font(.system(size: 12)).foregroundColor(Theme.muted)
+                                } else if let r = ble.lastBandBP {
+                                    Text("\(r.sys)/\(r.dia)").font(.system(size: 34, weight: .bold, design: .rounded)).foregroundColor(Theme.text)
+                                    let cat = BPCategory(sys: r.sys, dia: r.dia)
+                                    Text(cat.title).font(.system(size: 12, weight: .semibold)).foregroundColor(cat.color)
+                                } else {
+                                    Text("--").font(.system(size: 36, weight: .bold, design: .rounded)).foregroundColor(Theme.muted)
+                                    Text("mmHg").font(.system(size: 12)).foregroundColor(Theme.muted)
+                                }
+                            }
+                        }
+                        .frame(width: 170, height: 170)
+                        BigButton(title: ble.bpMeasuring ? "Measuring…" : "Measure blood pressure", symbol: "drop.fill",
+                                  color: Theme.purple, textColor: .white) {
+                            ble.measureBloodPressure()
+                        }
+                        .disabled(!ble.isWPBand || ble.bpMeasuring)
+                        .opacity(!ble.isWPBand || ble.bpMeasuring ? 0.5 : 1)
+                        Text(ble.isWPBand ? "This is your band's estimate. For medical decisions, check with a real BP machine."
+                                          : "Connect your band first: More → Connect band.")
+                            .font(.system(size: 12)).foregroundColor(ble.isWPBand ? Theme.muted : Theme.amber)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .appear(0)
+
+                Card {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 10) {
                             IconBadge(symbol: "drop.fill", color: Theme.purple)
-                            Label2(t: "New reading from your BP machine")
+                            Label2(t: "Or type a reading from a BP machine")
                         }
                         HStack(spacing: 10) {
                             picker("Upper", $sys, 70...250)
@@ -364,6 +398,7 @@ struct BPView: View {
                                 HStack {
                                     Text("\(r.systolic)/\(r.diastolic)").font(.system(size: 17, weight: .semibold, design: .rounded)).foregroundColor(Theme.text)
                                     if let p = r.pulse { Text("♥ \(p)").font(.system(size: 12)).foregroundColor(Theme.muted) }
+                                    if r.fromBand == true { Image(systemName: "applewatch").font(.system(size: 11)).foregroundColor(Theme.muted) }
                                     Text(cat.title).font(.system(size: 11, weight: .medium)).foregroundColor(cat.color)
                                     Spacer()
                                     Text(r.date, format: .dateTime.day().month().hour().minute()).font(.system(size: 12)).foregroundColor(Theme.muted)
@@ -379,8 +414,6 @@ struct BPView: View {
                     .appear(2)
                 }
 
-                Text("Your band can't measure blood pressure. Use a real BP machine, then save the numbers here to track them.")
-                    .font(.system(size: 12)).foregroundColor(Theme.muted).multilineTextAlignment(.center)
             }
             .padding(16)
         }

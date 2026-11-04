@@ -311,6 +311,20 @@ struct MoreView: View {
                         row("Connect band", ble.connected == nil ? "Not connected" : ble.connectedName,
                             "antenna.radiowaves.left.and.right", ble.connected == nil ? Theme.red : Theme.green)
                     }
+                    if ble.isWPBand {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                            ble.findBand()
+                        } label: {
+                            row("Find my band", "Makes your band vibrate", "bell.and.waves.left.and.right.fill", Theme.amber)
+                        }
+                        Button { ble.buzz(times: 3) } label: {
+                            row("Buzz 3 times", "Three vibrations in a row", "waveform", Theme.amber)
+                        }
+                        Button { ble.wpRefresh() } label: {
+                            row("Refresh from band", "Steps and battery", "arrow.clockwise", Theme.green)
+                        }
+                    }
                     Button { ble.reconnectSaved() } label: {
                         row("Reconnect", "Try the saved band again", "arrow.triangle.2.circlepath", Theme.blue)
                     }

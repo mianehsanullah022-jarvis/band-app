@@ -13,7 +13,15 @@ struct BandAppMain: App {
                 .environmentObject(store)
                 .preferredColorScheme(.dark)
                 .tint(Theme.green)
-                .onAppear { ble.onHeartRate = { [weak store] bpm in store?.addHR(bpm) } }
+                .onAppear {
+                    ble.onHeartRate = { [weak store] bpm in store?.addHR(bpm) }
+                    ble.onHRResult = { [weak store] bpm in
+                        store?.addHRCheck(HRCheck(date: Date(), bpm: bpm, low: bpm, high: bpm))
+                    }
+                    ble.onBPResult = { [weak store] sys, dia in
+                        store?.addBP(BPReading(date: Date(), systolic: sys, diastolic: dia, pulse: nil, fromBand: true))
+                    }
+                }
                 .onChange(of: phase) { p in if p != .active { store.save() } }
         }
     }

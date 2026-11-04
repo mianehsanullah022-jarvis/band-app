@@ -47,7 +47,7 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 10) {
                             IconBadge(symbol: "heart.fill", color: Theme.red)
-                            Label2(t: "Heart rate · live")
+                            Label2(t: "Heart rate")
                             Spacer()
                             if let hr = ble.heartRate {
                                 PulsingHeart(bpm: hr, size: 14)
@@ -67,6 +67,7 @@ struct HomeView: View {
                 .appear(3)
 
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
+                    stat("Steps", "figure.walk", Theme.green, ble.steps.map { Double($0) }, unit: "steps").appear(4)
                     stat("Resting HR", "heart.circle.fill", Theme.red, store.restingHR.map { Double($0) }, unit: "bpm").appear(4)
                     stat("Calories", "flame.fill", Theme.orange, store.todayCalories.map { Double($0) }, unit: "kcal").appear(5)
                     stat("Battery", "battery.75", Theme.green, ble.battery.map { Double($0) }, unit: "%").appear(6)
