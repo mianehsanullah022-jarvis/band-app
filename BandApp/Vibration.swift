@@ -114,7 +114,7 @@ struct VibeSettings: Codable {
 }
 
 /// Watches calls, alarms and reminders and buzzes the band.
-final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate {
+final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate, UNUserNotificationCenterDelegate {
     @Published var settings = VibeSettings() { didSet { save() } }
     @Published var alert: String?          // shown on screen with a Stop button
     @Published var callRinging = false
@@ -132,6 +132,12 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate {
             settings = s
         }
         callObserver.setDelegate(self, queue: .main)
+        let stop = UNNotificationAction(identifier: "STOP", title: "Stop", options: [.destructive])
+        let cat = UNNotificationCategory(identifier: "BAND_ALARM", actions: [stop], intentIdentifiers: [],
+                                         options: [.customDismissAction])
+        let nc = UNUserNotificationCenter.current()
+        nc.setNotificationCategories([cat])
+        nc.delegate = self
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.tick() }
     }
 
@@ -145,6 +151,19 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate {
     func stopAll() {
         player.stop()
         alert = nil
+    }
+
+    // Any action on our alarm notification (tap, Stop, or swipe away) stops the band.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler done: @escaping () -> Void) {
+        DispatchQueue.main.async { self.stopAll() }
+        done()
+    }
+
+    // If the alarm notification arrives while Band is open, the app shows its own Stop screen.
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
+        done([])
     }
 
     // Calls: buzz non-stop while an incoming call is ringing.
@@ -172,7 +191,7 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate {
             if a.hour == h && a.minute == m && a.lastFired != today {
                 settings.alarms[i].lastFired = today
                 alert = a.label.isEmpty ? "Alarm \(a.timeText)" : a.label
-                player.playUntilStopped(Vibes.find("call"), maxSeconds: 180)
+                player.playUntilStopped(Vibes.find("call"), maxSeconds: 60)
                 return
             }
         }
@@ -199,8 +218,9 @@ final class VibeCenter: NSObject, ObservableObject, CXCallObserverDelegate {
         for a in settings.alarms where a.enabled {
             let content = UNMutableNotificationContent()
             content.title = a.label.isEmpty ? "Alarm" : a.label
-            content.body = "Open Band to stop the vibration."
+            content.body = "Tap Stop, open, or swipe away to stop the band."
             content.sound = .default
+            content.categoryIdentifier = "BAND_ALARM"
             var dc = DateComponents()
             dc.hour = a.hour
             dc.minute = a.minute

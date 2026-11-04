@@ -39,7 +39,8 @@ extension BLEManager {
     /// Called once the band is ready to talk.
     func wpStart() {
         addLog("Talking to the band…")
-        wpRefresh()
+        stopVibrate()     // make sure the band isn't left buzzing from before
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.wpRefresh() }
     }
 
     func wpRefresh() {
@@ -91,6 +92,10 @@ extension BLEManager {
         let m = vibrateMethod
         sendVibrate(method: m, on: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            self?.sendVibrate(method: m, on: false)
+        }
+        // send "stop" a second time in case the first one got lost
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.35) { [weak self] in
             self?.sendVibrate(method: m, on: false)
         }
     }
