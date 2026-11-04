@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 // MARK: Health
 
@@ -11,6 +12,9 @@ struct HealthView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 12) {
                 ScreenTitle(title: "Health", subtitle: "From your band")
+
+                StepsTrendCard().appear(1)
+                if store.hrChecks.count >= 2 { HRTrendCard().appear(1) }
 
                 Card {
                     VStack(alignment: .leading, spacing: 12) {
@@ -365,6 +369,23 @@ struct MoreView: View {
                 } header: { Text("Water") }
 
                 Section {
+                    Stepper(value: $store.profile.stepsGoal, in: 1000...30000, step: 500) {
+                        row("Daily steps goal", "\(store.profile.stepsGoal) steps", "figure.walk", Theme.green)
+                    }
+                    Toggle(isOn: $vibes.settings.autoHR) {
+                        row("Auto heart rate", "Band measures every \(vibes.settings.autoHREveryMin) min", "heart.text.square.fill", Theme.red)
+                    }
+                    if vibes.settings.autoHR {
+                        Stepper("Every \(vibes.settings.autoHREveryMin) min", value: $vibes.settings.autoHREveryMin, in: 10...120, step: 5)
+                    }
+                    Toggle(isOn: $vibes.settings.lowBatteryBuzz) {
+                        row("Low battery buzz", "One gentle buzz at 15%", "battery.25", Theme.amber)
+                    }
+                } header: { Text("Goals and auto checks") } footer: {
+                    Text("Auto heart rate gives you Resting HR, Recovery and Strain. It works while Band is open or in the background.")
+                }
+
+                Section {
                     row("Heart rate readings", "\(store.samples.count) saved", "heart.text.square.fill", Theme.red)
                     row("Activities", "\(store.workouts.count) saved", "figure.run", Theme.blue)
                     row("Blood pressure", "\(store.bp.count) saved", "drop.fill", Theme.purple)
@@ -390,6 +411,81 @@ struct MoreView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 15)).foregroundColor(Theme.text)
                 Text(sub).font(.system(size: 12)).foregroundColor(Theme.muted)
+            }
+        }
+    }
+}
+
+
+// MARK: Trend cards (bar and line charts with a plain sentence)
+
+struct StepsTrendCard: View {
+    @EnvironmentObject var store: Store
+
+    var body: some View {
+        let week = store.stepsWeek
+        let days = week.filter { $0.ml > 0 }
+        let avg = days.isEmpty ? 0 : days.map { $0.ml }.reduce(0, +) / days.count
+        let best = week.max { $0.ml < $1.ml }
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    IconBadge(symbol: "figure.walk", color: Theme.green)
+                    Label2(t: "Steps this week")
+                }
+                Chart {
+                    ForEach(week) { d in
+                        BarMark(x: .value("Day", "\(d.index)\(d.label)"), y: .value("Steps", d.ml))
+                            .foregroundStyle(d.ml >= store.profile.stepsGoal ? Theme.green : Theme.green.opacity(0.45))
+                            .cornerRadius(5)
+                    }
+                    RuleMark(y: .value("Goal", store.profile.stepsGoal))
+                        .foregroundStyle(Theme.muted)
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                }
+                .chartXAxis {
+                    AxisMarks { v in
+                        AxisValueLabel {
+                            if let s = v.as(String.self) { Text(String(s.dropFirst())) }
+                        }
+                    }
+                }
+                .frame(height: 140)
+                Text(days.isEmpty ? "Wear your band and keep Band connected to fill this in."
+                     : "Average \(avg) steps a day. Best day: \(best?.ml ?? 0) steps.")
+                    .font(.system(size: 13)).foregroundColor(Theme.text.opacity(0.85))
+            }
+        }
+    }
+}
+
+struct HRTrendCard: View {
+    @EnvironmentObject var store: Store
+
+    var body: some View {
+        let list = Array(store.hrChecks.suffix(20))
+        let bpms = list.map { $0.bpm }
+        let lo = bpms.min() ?? 0, hi = bpms.max() ?? 0
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    IconBadge(symbol: "heart.fill", color: Theme.red)
+                    Label2(t: "Heart rate checks")
+                }
+                Chart {
+                    ForEach(list) { c in
+                        LineMark(x: .value("Time", c.date), y: .value("bpm", c.bpm))
+                            .foregroundStyle(Theme.red)
+                            .interpolationMethod(.catmullRom)
+                        PointMark(x: .value("Time", c.date), y: .value("bpm", c.bpm))
+                            .foregroundStyle(Theme.red)
+                            .symbolSize(20)
+                    }
+                }
+                .chartYScale(domain: max(30, lo - 10)...min(220, hi + 10))
+                .frame(height: 140)
+                Text("Your last \(list.count) checks ranged from \(lo) to \(hi) bpm.")
+                    .font(.system(size: 13)).foregroundColor(Theme.text.opacity(0.85))
             }
         }
     }

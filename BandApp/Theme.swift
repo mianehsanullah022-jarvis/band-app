@@ -136,9 +136,11 @@ struct Ring: View {
             Circle().stroke(Theme.line, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: shown)
-                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .stroke(AngularGradient(colors: [color.opacity(0.55), color], center: .center,
+                                        startAngle: .degrees(0), endAngle: .degrees(360 * max(shown, 0.01))),
+                        style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .shadow(color: color.opacity(0.45), radius: 6)
+                .shadow(color: color.opacity(0.4), radius: 6)
         }
         .onAppear { withAnimation(.easeOut(duration: 1.2).delay(0.15)) { shown = clamp(fraction) } }
         .onChange(of: fraction) { f in withAnimation(.easeInOut(duration: 0.6)) { shown = clamp(f) } }

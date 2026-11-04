@@ -11,6 +11,11 @@ struct HomeView: View {
                 header.appear(0)
 
                 HStack(spacing: 0) {
+                    Dial(value: steps.map { $0 >= 10000 ? String(format: "%.1fk", Double($0) / 1000) : "\($0)" } ?? "--",
+                         label: "Steps",
+                         fraction: Double(steps ?? 0) / Double(max(store.profile.stepsGoal, 1)),
+                         color: Theme.green)
+                        .frame(maxWidth: .infinity)
                     Dial(value: store.recovery.map { "\($0)%" } ?? "--",
                          label: "Recovery",
                          fraction: Double(store.recovery ?? 0) / 100,
@@ -21,17 +26,38 @@ struct HomeView: View {
                          fraction: (store.todayStrain ?? 0) / 21,
                          color: Theme.blue)
                         .frame(maxWidth: .infinity)
-                    Button { goTo(.measure) } label: {
-                        Dial(value: String(format: "%.1fL", Double(store.waterToday) / 1000),
-                             label: "Water",
-                             fraction: Double(store.waterToday) / Double(max(store.profile.waterGoalMl, 1)),
-                             color: Theme.water)
-                    }
-                    .buttonStyle(PressStyle())
-                    .frame(maxWidth: .infinity)
                 }
                 .padding(.vertical, 6)
                 .appear(1)
+
+                Card {
+                    HStack(alignment: .top, spacing: 12) {
+                        IconBadge(symbol: "text.bubble.fill", color: Theme.green)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label2(t: "Today in one line")
+                            Text(insight).font(.system(size: 14)).foregroundColor(Theme.text.opacity(0.9))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .appear(2)
+
+                Button { goTo(.measure) } label: {
+                    Card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 10) {
+                                IconBadge(symbol: "drop.circle.fill", color: Theme.water)
+                                Label2(t: "Water")
+                                Spacer()
+                                Text(String(format: "%.1f / %.1f L", Double(store.waterToday) / 1000, Double(store.profile.waterGoalMl) / 1000))
+                                    .font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.water)
+                            }
+                            ProgressBar(fraction: Double(store.waterToday) / Double(max(store.profile.waterGoalMl, 1)), color: Theme.water)
+                        }
+                    }
+                }
+                .buttonStyle(PressStyle())
+                .appear(2)
 
                 if let msg = hint {
                     Card {
@@ -49,7 +75,7 @@ struct HomeView: View {
                             IconBadge(symbol: "heart.fill", color: Theme.red)
                             Label2(t: "Heart rate")
                             Spacer()
-                            if let hr = ble.heartRate {
+                            if let hr = ble.heartRate ?? store.hrChecks.last?.bpm {
                                 PulsingHeart(bpm: hr, size: 14)
                                 Text("\(hr)")
                                     .font(.system(size: 26, weight: .semibold, design: .rounded))
@@ -61,13 +87,31 @@ struct HomeView: View {
                                 Text("--").font(.system(size: 26, weight: .semibold, design: .rounded)).foregroundColor(Theme.muted)
                             }
                         }
-                        Sparkline(values: ble.hrHistory, color: Theme.red)
+                        Sparkline(values: Array(store.today.map { $0.bpm }.suffix(60)), color: Theme.red)
+                        HStack {
+                            Text(ble.hrMeasuring ? "Band is measuring…" : "Tap to check your heart rate now")
+                                .font(.system(size: 12)).foregroundColor(Theme.muted)
+                            Spacer()
+                            Button {
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                ble.measureHeartRate()
+                            } label: {
+                                Label("Measure", systemImage: "heart.fill")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .padding(.horizontal, 14).padding(.vertical, 8)
+                                    .background(Theme.red.opacity(0.18))
+                                    .foregroundColor(Theme.red)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(PressStyle())
+                            .disabled(!ble.isWPBand || ble.hrMeasuring)
+                            .opacity(!ble.isWPBand || ble.hrMeasuring ? 0.5 : 1)
+                        }
                     }
                 }
                 .appear(3)
 
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
-                    stat("Steps", "figure.walk", Theme.green, ble.steps.map { Double($0) }, unit: "steps").appear(4)
                     stat("Resting HR", "heart.circle.fill", Theme.red, store.restingHR.map { Double($0) }, unit: "bpm").appear(4)
                     stat("Calories", "flame.fill", Theme.orange, store.todayCalories.map { Double($0) }, unit: "kcal").appear(5)
                     stat("Battery", "battery.75", Theme.green, ble.battery.map { Double($0) }, unit: "%").appear(6)
@@ -123,6 +167,34 @@ struct HomeView: View {
         .background(Theme.bg.ignoresSafeArea())
     }
 
+    var steps: Int? { ble.steps ?? store.stepsToday }
+
+    var greeting: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        let part = h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
+        return store.profile.name.isEmpty ? part : "\(part), \(store.profile.name)"
+    }
+
+    /// A plain sentence about today, built from real numbers only.
+    var insight: String {
+        var parts: [String] = []
+        if let s = steps {
+            let left = store.profile.stepsGoal - s
+            parts.append(left > 0 ? "\(left) steps to your goal" : "Step goal done 🎉")
+            let week = store.stepsWeek
+            if week.count == 7, week[5].ml > 0 {
+                let diff = s - week[5].ml
+                parts.append(diff >= 0 ? "\(diff) more than yesterday" : "\(-diff) fewer than yesterday so far")
+            }
+        }
+        if let hr = store.hrChecks.last { parts.append("last heart rate \(hr.bpm) bpm") }
+        let waterLeft = store.profile.waterGoalMl - store.waterToday
+        if waterLeft > 0 { parts.append(String(format: "%.1f L water to go", Double(waterLeft) / 1000)) }
+        if parts.isEmpty { return "Connect your band and measure your heart rate to see your day here." }
+        let line = parts.joined(separator: " · ")
+        return line.prefix(1).uppercased() + line.dropFirst()
+    }
+
     var recoveryColor: Color {
         guard let r = store.recovery else { return Theme.green }
         return r >= 67 ? Theme.green : (r >= 34 ? Theme.amber : Theme.red)
@@ -139,7 +211,7 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Date(), format: .dateTime.weekday(.wide).day().month())
                     .font(.system(size: 13)).foregroundColor(Theme.muted)
-                Text(store.profile.name.isEmpty ? "Today" : "Hi, \(store.profile.name)")
+                Text(greeting)
                     .font(.system(size: 30, weight: .bold)).foregroundColor(Theme.text)
             }
             Spacer()
