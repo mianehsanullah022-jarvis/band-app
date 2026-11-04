@@ -48,6 +48,7 @@ final class BLEManager: NSObject, ObservableObject {
     var onHRResult: ((Int) -> Void)?
     var onBPResult: ((Int, Int) -> Void)?
     var onSteps: ((Int) -> Void)?
+    var buzzSeq = 0
     var wpWrite: CBCharacteristic?
     var wpNotify: CBCharacteristic?
     var rx: [UInt8] = []

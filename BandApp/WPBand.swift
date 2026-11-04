@@ -90,18 +90,23 @@ extension BLEManager {
     /// One buzz of a set length: start, then stop.
     func buzzOnce(seconds: Double = 0.6) {
         let m = vibrateMethod
+        buzzSeq += 1
+        let n = buzzSeq
         sendVibrate(method: m, on: true)
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            self?.sendVibrate(method: m, on: false)
+            guard let self = self, self.buzzSeq == n else { return }   // a newer buzz will stop itself
+            self.sendVibrate(method: m, on: false)
         }
-        // send "stop" a second time in case the first one got lost
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.35) { [weak self] in
-            self?.sendVibrate(method: m, on: false)
+        // send "stop" a second time in case the first one got lost, unless a new buzz has started
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.25) { [weak self] in
+            guard let self = self, self.buzzSeq == n else { return }
+            self.sendVibrate(method: m, on: false)
         }
     }
 
     /// Sends "stop" for every vibrate method, so the band goes quiet whatever started it.
     func stopVibrate() {
+        buzzSeq += 1
         for i in 0..<Self.vibrateMethods.count {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.15) { [weak self] in
                 self?.sendVibrate(method: i, on: false)
