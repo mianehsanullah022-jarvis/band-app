@@ -45,7 +45,7 @@ struct SplashView: View {
 
                 VStack(spacing: 6) {
                     Text("BAND").font(.system(size: 30, weight: .heavy)).tracking(10).foregroundColor(Theme.text)
-                    Text("Know your body").font(.system(size: 14)).foregroundColor(Theme.muted)
+                    Text("Know your body, every day").font(.system(size: 14)).foregroundColor(Theme.muted)
                 }
                 .opacity(title ? 1 : 0)
                 .offset(y: title ? 0 : 12)
