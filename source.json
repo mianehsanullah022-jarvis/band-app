@@ -1,0 +1,38 @@
+{
+  "name": "Band",
+  "identifier": "io.github.mianehsanullah022-jarvis.band",
+  "subtitle": "Your own app for your band",
+  "website": "https://github.com/mianehsanullah022-jarvis/band-app",
+  "iconURL": "https://raw.githubusercontent.com/mianehsanullah022-jarvis/band-app/main/BandApp/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+  "tintColor": "#2ECC71",
+  "apps": [
+    {
+      "name": "Band",
+      "bundleIdentifier": "com.ehsan.bandapp",
+      "developerName": "Ehsanullah",
+      "subtitle": "Heart rate, steps, vibrations and more",
+      "localizedDescription": "Your own app for your WP band: heart rate, blood pressure, steps, water, workouts, vibration patterns, calls and alarms.",
+      "iconURL": "https://raw.githubusercontent.com/mianehsanullah022-jarvis/band-app/main/BandApp/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+      "tintColor": "#2ECC71",
+      "category": "lifestyle",
+      "versions": [
+        {
+          "version": "1.0.18",
+          "buildVersion": "18",
+          "date": "2026-11-05",
+          "localizedDescription": "Band 1.0.18",
+          "downloadURL": "https://github.com/mianehsanullah022-jarvis/band-app/releases/download/build-18/Band.ipa",
+          "size": 752232,
+          "minOSVersion": "16.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSBluetoothAlwaysUsageDescription": "Band uses Bluetooth to read data from your fitness band."
+        }
+      }
+    }
+  ],
+  "news": []
+}
