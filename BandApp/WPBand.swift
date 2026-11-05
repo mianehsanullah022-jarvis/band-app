@@ -136,9 +136,13 @@ extension BLEManager {
     /// right away and once more a little later, in case the first one is missed.
     func stopVibrate() {
         buzzSeq += 1
+        let n = buzzSeq
         wpResetQueue()
         vibrateStop()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in self?.vibrateStop() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak self] in
+            guard let self = self, self.buzzSeq == n else { return }   // a new buzz started; it stops itself
+            self.vibrateStop()
+        }
     }
 
     private func timeoutMeasuring() {
