@@ -5,6 +5,7 @@ struct BandAppMain: App {
     @StateObject private var ble = BLEManager()
     @StateObject private var store = Store()
     @StateObject private var vibes = VibeCenter()
+    @StateObject private var updater = Updater()
     @Environment(\.scenePhase) private var phase
 
     var body: some Scene {
@@ -13,6 +14,7 @@ struct BandAppMain: App {
                 .environmentObject(ble)
                 .environmentObject(store)
                 .environmentObject(vibes)
+                .environmentObject(updater)
                 .preferredColorScheme(.dark)
                 .tint(Theme.green)
                 .onAppear {
@@ -26,7 +28,11 @@ struct BandAppMain: App {
                         store?.addBP(BPReading(date: Date(), systolic: sys, diastolic: dia, pulse: nil, fromBand: true))
                     }
                 }
-                .onChange(of: phase) { p in if p != .active { store.save() } }
+                .onChange(of: phase) { p in
+                    if p != .active { store.save() }
+                    if p == .active { Task { await updater.check() } }
+                }
+                .task { await updater.check() }
         }
     }
 }

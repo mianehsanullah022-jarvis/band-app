@@ -8,9 +8,15 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: build
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-15
+    env:
+      BUILD_NUM: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +32,7 @@ jobs:
             -configuration Release -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            MARKETING_VERSION="1.0.${BUILD_NUM}" CURRENT_PROJECT_VERSION="${BUILD_NUM}" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             build
 
@@ -34,6 +41,8 @@ jobs:
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/Band.app Payload/
           zip -qry Band.ipa Payload
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Payload/Band.app/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Payload/Band.app/Info.plist
           ls -la Band.ipa
 
       - uses: actions/upload-artifact@v4
@@ -41,11 +50,40 @@ jobs:
           name: Band-ipa
           path: Band.ipa
 
-      - name: Publish download
+      - name: Publish this version
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Band 1.0.${{ github.run_number }}
+          body: Band version 1.0.${{ github.run_number }}
+          files: Band.ipa
+          make_latest: false
+
+      - name: Publish as latest
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Band app (latest)
-          body: Download Band.ipa and install it with Sideloadly.
+          body: Download Band.ipa and install it with Sideloadly, or update from SideStore.
           files: Band.ipa
           make_latest: true
+
+      - name: Update the SideStore source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SIZE=$(stat -f%z Band.ipa)
+          python3 tools/make_source.py \
+            --repo "${{ github.repository }}" \
+            --build "${BUILD_NUM}" \
+            --size "${SIZE}" \
+            --info Payload/Band.app/Info.plist \
+            --out source.json
+          cat source.json
+          mkdir -p /tmp/altsource && cp source.json /tmp/altsource/
+          cd /tmp/altsource
+          git init -q
+          git checkout -q -b altsource
+          git add source.json
+          git -c user.name="github-actions" -c user.email="actions@github.com" commit -q -m "Band 1.0.${BUILD_NUM}"
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" altsource

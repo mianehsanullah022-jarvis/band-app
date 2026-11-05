@@ -143,6 +143,7 @@ struct TabBar: View {
 
 struct RootView: View {
     @EnvironmentObject var vibes: VibeCenter
+    @AppStorage(ThemeChoice.key) private var theme = "black"
     @State private var tab: AppTab = .home
     @State private var showSplash = true
 
@@ -158,11 +159,12 @@ struct RootView: View {
                 case .more: MoreView()
                 }
             }
-            .id(tab)
+            .id("\(tab)-\(theme)")
             .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 10)), removal: .opacity))
         }
+        .tint(Theme.green)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            TabBar(tab: $tab)
+            TabBar(tab: $tab).id(theme)
         }
         .overlay {
             if let a = vibes.alert {

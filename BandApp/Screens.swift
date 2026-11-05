@@ -306,11 +306,29 @@ struct MoreView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var store: Store
     @EnvironmentObject var vibes: VibeCenter
+    @EnvironmentObject var updater: Updater
+    @AppStorage(ThemeChoice.key) private var theme = "black"
     @State private var confirmReset = false
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    NavigationLink { UpdatesView() } label: {
+                        row(updater.updateAvailable ? "Update available" : "Updates",
+                            updater.updateAvailable ? "Version \(updater.latestVersion ?? "") is ready" : "Version \(updater.currentVersion)",
+                            "arrow.down.circle.fill", Theme.green)
+                    }
+                    HStack(spacing: 12) {
+                        IconBadge(symbol: "paintpalette.fill", color: Theme.green)
+                        Picker("Look", selection: $theme) {
+                            Text("Black").tag("black")
+                            Text("Gold").tag("gold")
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                } header: { Text("App") }
+
                 Section {
                     NavigationLink { DetectiveView() } label: {
                         row("Connect band", ble.connected == nil ? "Not connected" : ble.connectedName,

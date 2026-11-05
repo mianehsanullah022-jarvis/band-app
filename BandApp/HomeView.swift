@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var ble: BLEManager
     @EnvironmentObject var store: Store
+    @EnvironmentObject var updater: Updater
     let goTo: (AppTab) -> Void
 
     var body: some View {
@@ -10,24 +11,27 @@ struct HomeView: View {
             VStack(spacing: 12) {
                 header.appear(0)
 
-                HStack(spacing: 0) {
-                    Dial(value: steps.map { $0 >= 10000 ? String(format: "%.1fk", Double($0) / 1000) : "\($0)" } ?? "--",
-                         label: "Steps",
-                         fraction: Double(steps ?? 0) / Double(max(store.profile.stepsGoal, 1)),
-                         color: Theme.green)
-                        .frame(maxWidth: .infinity)
-                    Dial(value: store.recovery.map { "\($0)%" } ?? "--",
-                         label: "Recovery",
-                         fraction: Double(store.recovery ?? 0) / 100,
-                         color: recoveryColor)
-                        .frame(maxWidth: .infinity)
-                    Dial(value: store.todayStrain.map { String(format: "%.1f", $0) } ?? "--",
-                         label: "Strain",
-                         fraction: (store.todayStrain ?? 0) / 21,
-                         color: Theme.blue)
-                        .frame(maxWidth: .infinity)
+                if updater.showBanner {
+                    UpdateBanner()
                 }
-                .padding(.vertical, 6)
+
+                HeroRing(outer: heroFraction,
+                         inner: (store.todayStrain ?? 0) / 21,
+                         outerColor: heroColor,
+                         innerColor: Theme.blue,
+                         big: heroBig,
+                         unit: heroUnit,
+                         caption: heroCaption,
+                         subCaption: store.todayStrain.map { String(format: "Strain %.1f", $0) } ?? "Strain --")
+                    .padding(.top, 6)
+                    .appear(1)
+
+                HStack(spacing: 8) {
+                    StatChip(symbol: "figure.walk", color: Theme.green, text: steps.map { "\($0)" } ?? "--")
+                    StatChip(symbol: "heart.fill", color: Theme.red,
+                             text: (ble.heartRate ?? store.hrChecks.last?.bpm).map { "\($0) bpm" } ?? "-- bpm")
+                    StatChip(symbol: "flame.fill", color: Theme.orange, text: store.todayCalories.map { "\($0)" } ?? "--")
+                }
                 .appear(1)
 
                 Card {
@@ -194,6 +198,22 @@ struct HomeView: View {
         let line = parts.joined(separator: " · ")
         return line.prefix(1).uppercased() + line.dropFirst()
     }
+
+    // The big ring shows Recovery once there's enough data; until then, the steps goal.
+    var heroFraction: Double {
+        if let r = store.recovery { return Double(r) / 100 }
+        return Double(steps ?? 0) / Double(max(store.profile.stepsGoal, 1))
+    }
+    var heroBig: String {
+        if let r = store.recovery { return "\(r)" }
+        return steps.map { $0 >= 10000 ? String(format: "%.1fk", Double($0) / 1000) : "\($0)" } ?? "--"
+    }
+    var heroUnit: String { store.recovery != nil ? "%" : "" }
+    var heroCaption: String {
+        if let r = store.recovery { return "Recovery · " + (r >= 67 ? "Ready" : r >= 34 ? "Take it steady" : "Rest today") }
+        return "Steps · goal \(store.profile.stepsGoal)"
+    }
+    var heroColor: Color { store.recovery != nil ? recoveryColor : Theme.green }
 
     var recoveryColor: Color {
         guard let r = store.recovery else { return Theme.green }

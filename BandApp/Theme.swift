@@ -1,14 +1,23 @@
 import SwiftUI
 
+/// The two looks: "black" (green accent) and "gold" (black and gold).
+enum ThemeChoice {
+    static let key = "theme"
+    static var gold: Bool { UserDefaults.standard.string(forKey: key) == "gold" }
+}
+
 enum Theme {
-    static let bg = Color.black
-    static let card = Color(red: 0.067, green: 0.075, blue: 0.082)
-    static let cardHi = Color(red: 0.094, green: 0.102, blue: 0.114)
-    static let line = Color(red: 0.118, green: 0.129, blue: 0.145)
-    static let muted = Color(red: 0.56, green: 0.585, blue: 0.616)
-    static let text = Color(red: 0.96, green: 0.965, blue: 0.97)
-    static let green = Color(red: 0.18, green: 0.8, blue: 0.443)
-    static let blue = Color(red: 0.227, green: 0.553, blue: 1.0)
+    static var isGold: Bool { ThemeChoice.gold }
+
+    static var bg: Color { isGold ? Color(red: 0.04, green: 0.04, blue: 0.035) : .black }
+    static var card: Color { isGold ? Color(red: 0.075, green: 0.068, blue: 0.055) : Color(red: 0.067, green: 0.075, blue: 0.082) }
+    static var cardHi: Color { isGold ? Color(red: 0.105, green: 0.095, blue: 0.075) : Color(red: 0.094, green: 0.102, blue: 0.114) }
+    static var line: Color { isGold ? Color(red: 0.165, green: 0.141, blue: 0.094) : Color(red: 0.118, green: 0.129, blue: 0.145) }
+    static var muted: Color { isGold ? Color(red: 0.68, green: 0.62, blue: 0.5) : Color(red: 0.56, green: 0.585, blue: 0.616) }
+    static var text: Color { isGold ? Color(red: 0.953, green: 0.929, blue: 0.878) : Color(red: 0.96, green: 0.965, blue: 0.97) }
+    /// The main accent: green in Black, gold in Gold.
+    static var green: Color { isGold ? Color(red: 0.831, green: 0.686, blue: 0.216) : Color(red: 0.18, green: 0.8, blue: 0.443) }
+    static var blue: Color { isGold ? Color(red: 0.91, green: 0.784, blue: 0.447) : Color(red: 0.227, green: 0.553, blue: 1.0) }
     static let amber = Color(red: 0.96, green: 0.72, blue: 0.24)
     static let orange = Color(red: 0.96, green: 0.48, blue: 0.24)
     static let red = Color(red: 0.898, green: 0.282, blue: 0.302)
@@ -258,7 +267,7 @@ struct Sparkline: View {
 
 // MARK: Zone bars (grow in)
 
-let zoneColors: [Color] = [Theme.blue, Theme.green, Theme.amber, Theme.orange, Theme.red]
+var zoneColors: [Color] { [Color(red: 0.227, green: 0.553, blue: 1.0), Color(red: 0.18, green: 0.8, blue: 0.443), Theme.amber, Theme.orange, Theme.red] }
 
 struct ZoneBars: View {
     let seconds: [Double]
@@ -314,5 +323,64 @@ struct WaveShape: Shape {
         p.addLine(to: CGPoint(x: r.width, y: r.height))
         p.closeSubpath()
         return p
+    }
+}
+
+
+// MARK: Hero ring (design A): one big glowing score with a second ring inside
+
+struct HeroRing: View {
+    let outer: Double          // 0...1
+    let inner: Double          // 0...1
+    let outerColor: Color
+    let innerColor: Color
+    let big: String
+    let unit: String
+    let caption: String
+    let subCaption: String
+    @State private var glow = false
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(RadialGradient(colors: [outerColor.opacity(glow ? 0.16 : 0.08), .clear],
+                                     center: .center, startRadius: 10, endRadius: 140))
+                .scaleEffect(glow ? 1.05 : 0.95)
+            Ring(fraction: outer, color: outerColor, lineWidth: 16)
+                .padding(4)
+            Ring(fraction: inner, color: innerColor, lineWidth: 8)
+                .padding(30)
+            VStack(spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(big)
+                        .font(.system(size: 58, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .foregroundColor(Theme.text)
+                    Text(unit).font(.system(size: 22, weight: .semibold, design: .rounded)).foregroundColor(Theme.muted)
+                }
+                Text(caption).font(.system(size: 13, weight: .semibold)).foregroundColor(outerColor)
+                Text(subCaption).font(.system(size: 12, weight: .medium)).foregroundColor(innerColor)
+            }
+        }
+        .frame(width: 236, height: 236)
+        .onAppear { withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { glow = true } }
+    }
+}
+
+/// Small rounded chip with an icon and a number (design A).
+struct StatChip: View {
+    let symbol: String
+    let color: Color
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.system(size: 12, weight: .semibold)).foregroundColor(color)
+            Text(text).font(.system(size: 13, weight: .semibold, design: .rounded)).monospacedDigit().foregroundColor(Theme.text)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Theme.card)
+        .overlay(Capsule().stroke(Theme.line, lineWidth: 1))
+        .clipShape(Capsule())
     }
 }
